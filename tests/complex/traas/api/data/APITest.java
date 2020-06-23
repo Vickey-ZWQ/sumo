@@ -1,18 +1,21 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2017-2019 German Aerospace Center (DLR) and others.
+// Copyright (C) 2017-2020 German Aerospace Center (DLR) and others.
 // TraaS module
 // Copyright (C) 2013-2017 Dresden University of Technology
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    APITest.java
 /// @author  Mario Krumnow
 /// @date    2013
-/// @version $Id$
 ///
 //
 /****************************************************************************/
@@ -39,22 +42,19 @@ import de.tudresden.ws.container.SumoTLSController;
 import de.tudresden.ws.container.SumoTLSProgram;
 
 public class APITest {
-
-    static String sumo_bin = "sumo";
-    static String config_file = "data/config.sumocfg";
-    static double step_length = 1.0;
-
     public static void main(String[] args) {
+        String sumo_bin = "sumo";
+        String config_file = "data/config.sumocfg";
+        double step_length = 1.0;
 
+        if (args.length > 0) {
+            sumo_bin = args[0];
+        }
+        if (args.length > 1) {
+            config_file = args[1];
+        }
 
         try {
-            if (args.length > 0) {
-                sumo_bin = args[0];
-            }
-            if (args.length > 1) {
-                config_file = args[1];
-            }
-
             SumoTraciConnection conn = new SumoTraciConnection(sumo_bin, config_file);
             conn.addOption("step-length", step_length + "");
             conn.addOption("start", "true"); //start sumo immediately
@@ -63,6 +63,8 @@ public class APITest {
             conn.runServer();
             conn.setOrder(1);
 
+            double deltaT = (double)conn.do_job_get(Simulation.getDeltaT());
+            System.out.println("deltaT:" + deltaT);
             SumoStage stage = (SumoStage)conn.do_job_get(Simulation.findRoute("gneE0", "gneE2", "car", 0, 0));
             System.out.println("findRoute result stage:");
             for (String s : stage.edges) {
@@ -137,6 +139,16 @@ public class APITest {
             conn.do_job_set(Edge.setParameter("gneE0", "edgeParam", "edgeValue"));
             System.out.println("Edge.getParameter: " + (String)conn.do_job_get(Edge.getParameter("gneE0", "edgeParam")));
 
+            conn.do_job_set(Edge.adaptTraveltime("gneE0", 123, 2000, 4000));
+            System.out.println("Edge.getAdaptatedTraveltime: " + (double)conn.do_job_get(Edge.getAdaptedTraveltime("gneE0", 3000)));
+            System.out.println("Edge.getAdaptatedTraveltime: " + (double)conn.do_job_get(Edge.getAdaptedTraveltime("gneE0", 1000)));
+            System.out.println("Edge.getAdaptatedTraveltime: " + (double)conn.do_job_get(Edge.getAdaptedTraveltime("gneE0", 5000)));
+
+            conn.do_job_set(Edge.setEffort("gneE0", 246, 2000, 4000));
+            System.out.println("Edge.getEffort: " + (double)conn.do_job_get(Edge.getEffort("gneE0", 3000)));
+            System.out.println("Edge.getEffort: " + (double)conn.do_job_get(Edge.getEffort("gneE0", 1000)));
+            System.out.println("Edge.getEffort: " + (double)conn.do_job_get(Edge.getEffort("gneE0", 5000)));
+
             conn.do_job_set(Lane.setParameter("gneE0_1", "laneParam", "laneValue"));
             System.out.println("Lane.getParameter: " + (String)conn.do_job_get(Lane.getParameter("gneE0_1", "laneParam")));
 
@@ -145,6 +157,9 @@ public class APITest {
 
             conn.do_job_set(Poi.setParameter("t0", "poiParam", "poiValue"));
             System.out.println("Poi.getParameter: " + (String)conn.do_job_get(Poi.getParameter("t0", "poiParam")));
+
+            SumoStringList controlledJunctions = (SumoStringList)conn.do_job_get(Trafficlight.getControlledJunctions("gneJ1"));
+            System.out.println("Trafficlight.getControlledJunctions: " + controlledJunctions);
 
             conn.do_job_set(Trafficlight.setParameter("gneJ1", "tlsParam", "tlsValue"));
             System.out.println("Trafficlight.getParameter: " + (String)conn.do_job_get(Trafficlight.getParameter("gneJ1", "tlsParam")));
@@ -167,12 +182,27 @@ public class APITest {
             System.out.println("Simulation.convertGeo: " + geoPos);
 
             System.out.println("Lane.getLinks: " + conn.do_job_get(Lane.getLinks(":gneJ1_6_0")));
+
             conn.close();
 
         } catch (Exception ex) {
             ex.printStackTrace();
         }
 
+        try {
+            SumoTraciConnection conn = new SumoTraciConnection(sumo_bin, config_file);
+            conn.addOption("step-length", step_length + "");
+            conn.addOption("start", "true"); //start sumo immediately
+
+            //start Traci Server
+            conn.runServer();
+            conn.setOrder(1);
+
+            // expecting exception here since we use get instead of set
+            conn.do_job_get(Simulation.saveState("file-state-now"));
+        } catch (Exception tex) {
+            System.err.println(tex.getMessage());
+        }
     }
 
 }

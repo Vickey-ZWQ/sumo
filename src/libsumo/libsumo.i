@@ -2,6 +2,7 @@
 #pragma SWIG nowarn=511
 
 #ifdef SWIGPYTHON
+%naturalvar;
 %rename(edge) Edge;
 %rename(inductionloop) InductionLoop;
 %rename(junction) Junction;
@@ -16,25 +17,36 @@
 %rename(trafficlight) TrafficLight;
 %rename(vehicle) Vehicle;
 %rename(vehicletype) VehicleType;
+%rename(calibrator) Calibrator;
+%rename(busstop) BusStop;
+%rename(parkingarea) ParkingArea;
+%rename(chargingstation) ChargingStation;
+%rename(overheadwire) OverheadWire;
 
 // adding dummy init and close for easier traci -> libsumo transfer
 %pythoncode %{
-from traci import constants, exceptions, _vehicle, _person, _trafficlight
+from traci import constants, exceptions, _vehicle, _person, _trafficlight, _simulation
 
 def isLibsumo():
     return True
 
+def hasGUI():
+    return False
+
 def init(port):
     print("Warning! To make your code usable with traci and libsumo, please use traci.start instead of traci.init.")
 
-def close():
-    simulation.close()
-
-def start(args):
-    simulation.load(args[1:])
+def load(args):
+    simulation.load(args)
 
 def simulationStep(step=0):
     simulation.step(step)
+    result = []
+    for domain in (edge, inductionloop, junction, lane, lanearea, multientryexit,
+                   person, poi, polygon, route, trafficlight, vehicle, vehicletype):
+        result += [(k, v) for k, v in domain.getAllSubscriptionResults().items()]
+        result += [(k, v) for k, v in domain.getAllContextSubscriptionResults().items()]
+    return result
 %}
 
 /* There is currently no TraCIPosition used as input so this is only for future usage
@@ -100,6 +112,14 @@ def simulationStep(step=0):
     $1 = PySequence_Check($input) ? 1 : 0;
 }
 
+%typemap(in) const std::vector<double>& (std::vector<double> values) {
+    const Py_ssize_t size = PySequence_Size($input);
+    for (Py_ssize_t i = 0; i < size; i++) {
+        values.push_back(PyFloat_AsDouble(PySequence_GetItem($input, i)));
+    }
+    $1 = &values;
+}
+
 
 %{
 #include <libsumo/TraCIDefs.h>
@@ -138,9 +158,9 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
         if (thePosition != nullptr) {
             PyObject* tuple;
             if (thePosition->z != libsumo::INVALID_DOUBLE_VALUE) {
-                tuple = PyTuple_Pack(3, PyFloat_FromDouble(thePosition->x), PyFloat_FromDouble(thePosition->y), PyFloat_FromDouble(thePosition->z));
+                tuple = Py_BuildValue("(ddd)", thePosition->x, thePosition->y, thePosition->z);
             } else {
-                tuple = PyTuple_Pack(2, PyFloat_FromDouble(thePosition->x), PyFloat_FromDouble(thePosition->y));
+                tuple = Py_BuildValue("(dd)", thePosition->x, thePosition->y);
             }
             PyDict_SetItem(result, PyInt_FromLong(theKey), tuple);
             continue;
@@ -149,9 +169,9 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
         if (theRoadPosition != nullptr) {
             PyObject* tuple;
             if (theRoadPosition->laneIndex != libsumo::INVALID_INT_VALUE) {
-                tuple = PyTuple_Pack(3, PyUnicode_FromString(theRoadPosition->edgeID.c_str()), PyFloat_FromDouble(theRoadPosition->pos), PyInt_FromLong(theRoadPosition->laneIndex));
+                tuple = Py_BuildValue("(sdi)", theRoadPosition->edgeID.c_str(), theRoadPosition->pos, theRoadPosition->laneIndex);
             } else {
-                tuple = PyTuple_Pack(2, PyUnicode_FromString(theRoadPosition->edgeID.c_str()), PyFloat_FromDouble(theRoadPosition->pos));
+                tuple = Py_BuildValue("(sd)", theRoadPosition->edgeID.c_str(), theRoadPosition->pos);
             }
             PyDict_SetItem(result, PyInt_FromLong(theKey), tuple);
             continue;
@@ -159,7 +179,7 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
         PyObject* value = SWIG_NewPointerObj(SWIG_as_voidptr(theVal), SWIGTYPE_p_libsumo__TraCIResult, 0);
         PyDict_SetItem(result, PyInt_FromLong(theKey), value);
     }
-	return result;
+    return result;
 }
 %}
 
@@ -179,18 +199,18 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
     $result = PyDict_New();
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
         PyObject* innerDict = PyDict_New();
-		for (auto inner = iter->second.begin(); inner != iter->second.end(); ++inner) {
+        for (auto inner = iter->second.begin(); inner != iter->second.end(); ++inner) {
             PyDict_SetItem(innerDict, PyUnicode_FromString(inner->first.c_str()), parseSubscriptionMap(inner->second));
-		}
+        }
         PyDict_SetItem($result, PyUnicode_FromString(iter->first.c_str()), innerDict);
     }
 };
 
 %typemap(out) libsumo::TraCIPosition {
     if ($1.z != libsumo::INVALID_DOUBLE_VALUE) {
-        $result = PyTuple_Pack(3, PyFloat_FromDouble($1.x), PyFloat_FromDouble($1.y), PyFloat_FromDouble($1.z));
+        $result = Py_BuildValue("(ddd)", $1.x, $1.y, $1.z);
     } else {
-        $result = PyTuple_Pack(2, PyFloat_FromDouble($1.x), PyFloat_FromDouble($1.y));
+        $result = Py_BuildValue("(dd)", $1.x, $1.y);
     }
 };
 
@@ -198,30 +218,31 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
     $result = PyTuple_New($1.size());
     int index = 0;
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
-        PyTuple_SetItem($result, index++, PyTuple_Pack(2, PyFloat_FromDouble(iter->x), PyFloat_FromDouble(iter->y)));
+        PyTuple_SetItem($result, index++, Py_BuildValue("(dd)", iter->x, iter->y));
     }
 };
 
 %typemap(out) libsumo::TraCIColor {
-    $result = PyTuple_Pack(4, PyLong_FromLong($1.r), PyLong_FromLong($1.g), PyLong_FromLong($1.b), PyLong_FromLong($1.a));
+    $result = Py_BuildValue("(iiii)", $1.r, $1.g, $1.b, $1.a);
 };
 
 %typemap(out) libsumo::TraCIRoadPosition {
-    $result = PyTuple_Pack(3, PyUnicode_FromString($1.edgeID.c_str()), PyFloat_FromDouble($1.pos), PyLong_FromLong($1.laneIndex));
+    $result = Py_BuildValue("(sdi)", $1.edgeID.c_str(), $1.pos, $1.laneIndex);
 };
 
 %typemap(out) std::vector<libsumo::TraCIConnection> {
     $result = PyList_New($1.size());
     int index = 0;
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
-        PyList_SetItem($result, index++, PyTuple_Pack(8, PyUnicode_FromString(iter->approachedLane.c_str()),
-                                                         PyBool_FromLong(iter->hasPrio),
-                                                         PyBool_FromLong(iter->isOpen),
-                                                         PyBool_FromLong(iter->hasFoe),
-                                                         PyUnicode_FromString(iter->approachedInternal.c_str()),
-                                                         PyUnicode_FromString(iter->state.c_str()),
-                                                         PyUnicode_FromString(iter->direction.c_str()),
-                                                         PyFloat_FromDouble(iter->length)));
+        PyList_SetItem($result, index++, Py_BuildValue("(sNNNsssd)",
+                                                       iter->approachedLane.c_str(),
+                                                       PyBool_FromLong(iter->hasPrio),
+                                                       PyBool_FromLong(iter->isOpen),
+                                                       PyBool_FromLong(iter->hasFoe),
+                                                       iter->approachedInternal.c_str(),
+                                                       iter->state.c_str(),
+                                                       iter->direction.c_str(),
+                                                       iter->length));
     }
 };
 
@@ -229,11 +250,12 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
     $result = PyList_New($1.size());
     int index = 0;
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
-        PyList_SetItem($result, index++, PyTuple_Pack(5, PyUnicode_FromString(iter->id.c_str()),
-                                                         PyFloat_FromDouble(iter->length),
-                                                         PyFloat_FromDouble(iter->entryTime),
-                                                         PyFloat_FromDouble(iter->leaveTime),
-                                                         PyUnicode_FromString(iter->typeID.c_str())));
+        PyList_SetItem($result, index++, Py_BuildValue("(sddds)",
+                                                       iter->id.c_str(),
+                                                       iter->length,
+                                                       iter->entryTime,
+                                                       iter->leaveTime,
+                                                       iter->typeID.c_str()));
     }
 };
 
@@ -246,12 +268,13 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
         for (int i = 0; i < size; i++) {
             PyTuple_SetItem(nextLanes, i, PyUnicode_FromString(iter->continuationLanes[i].c_str()));
         }
-        PyTuple_SetItem($result, index++, PyTuple_Pack(6, PyUnicode_FromString(iter->laneID.c_str()),
-                                                          PyFloat_FromDouble(iter->length),
-                                                          PyFloat_FromDouble(iter->occupation),
-                                                          PyFloat_FromDouble(iter->bestLaneOffset),
-                                                          PyBool_FromLong(iter->allowsContinuation),
-                                                          nextLanes));
+        PyTuple_SetItem($result, index++, Py_BuildValue("(sddiNN)",
+                                                        iter->laneID.c_str(),
+                                                        iter->length,
+                                                        iter->occupation,
+                                                        iter->bestLaneOffset,
+                                                        PyBool_FromLong(iter->allowsContinuation),
+                                                        nextLanes));
     }
 };
 
@@ -259,10 +282,11 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
     $result = PyTuple_New($1.size());
     int index = 0;
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
-        PyTuple_SetItem($result, index++, PyTuple_Pack(4, PyUnicode_FromString(iter->id.c_str()),
-                                                          PyLong_FromLong(iter->tlIndex),
-                                                          PyFloat_FromDouble(iter->dist),
-                                                          PyUnicode_FromStringAndSize(&iter->state, 1)));
+        PyTuple_SetItem($result, index++, Py_BuildValue("(sidN)",
+                                                        iter->id.c_str(),
+                                                        iter->tlIndex,
+                                                        iter->dist,
+                                                        PyUnicode_FromStringAndSize(&iter->state, 1)));
     }
 };
 
@@ -270,31 +294,74 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
     $result = PyTuple_New($1.size());
     int index = 0;
     for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
-        PyTuple_SetItem($result, index++, PyTuple_Pack(6, PyUnicode_FromString(iter->lane.c_str()),
-                                                          PyFloat_FromDouble(iter->endPos),
-                                                          PyUnicode_FromString(iter->stoppingPlaceID.c_str()),
-                                                          PyLong_FromLong(iter->stopFlags),
-                                                          PyFloat_FromDouble(iter->duration),
-                                                          PyFloat_FromDouble(iter->until)));
+        PyTuple_SetItem($result, index++, Py_BuildValue("(sdsidd)",
+                                                        iter->lane.c_str(),
+                                                        iter->endPos,
+                                                        iter->stoppingPlaceID.c_str(),
+                                                        iter->stopFlags,
+                                                        iter->duration,
+                                                        iter->until));
+    }
+};
+
+%typemap(out) std::vector<std::vector<libsumo::TraCILink> > {
+    $result = PyList_New($1.size());
+    int index = 0;
+    for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
+        PyObject* innerList = PyList_New(iter->size());
+        int innerIndex = 0;
+        for (auto inner = iter->begin(); inner != iter->end(); ++inner) {
+            PyList_SetItem(innerList, innerIndex++, Py_BuildValue("(sss)",
+                                                                  inner->fromLane.c_str(),
+                                                                  inner->toLane.c_str(),
+                                                                  inner->viaLane.c_str()));
+        }
+        PyList_SetItem($result, index++, innerList);
+    }
+};
+
+%typemap(out) std::vector<std::pair<std::string, double> > {
+    $result = PyTuple_New($1.size());
+    int index = 0;
+    for (auto iter = $1.begin(); iter != $1.end(); ++iter) {
+        PyTuple_SetItem($result, index++, Py_BuildValue("(sd)", iter->first.c_str(), iter->second));
     }
 };
 
 %typemap(out) std::pair<int, int> {
-    $result = PyTuple_Pack(2, PyLong_FromLong($1.first), PyLong_FromLong($1.second));
+    $result = Py_BuildValue("(ii)", $1.first, $1.second);
 };
 
 %typemap(out) std::pair<std::string, double> {
-    $result = PyTuple_Pack(2, PyUnicode_FromString($1.first.c_str()), PyFloat_FromDouble($1.second));
+    $result = Py_BuildValue("(sd)", $1.first.c_str(), $1.second);
 };
 
 %extend libsumo::TraCIStage {
   %pythoncode %{
-    def __repr__(self):
-        return "Stage(%s)" % (", ".join(["%s=%s" % (attr, repr(getter(self))) for attr, getter in self.__swig_getmethods__.items()]))
+    __attr_repr__ = _simulation.Stage.__attr_repr__
+    __repr__ = _simulation.Stage.__repr__
+  %}
+};
+
+%extend libsumo::TraCILogic {
+  %pythoncode %{
+    getPhases = _trafficlight.Logic.getPhases
+    __repr__ = _trafficlight.Logic.__repr__
+  %}
+};
+
+%extend libsumo::TraCIPhase {
+  %pythoncode %{
+    __repr__ = _trafficlight.Phase.__repr__
   %}
 };
 
 %exceptionclass libsumo::TraCIException;
+
+%pythonappend libsumo::Vehicle::getLeader(const std::string&, double) %{
+    if val[0] == "" and vehicle._legacyGetLeader:
+        return None
+%}
 
 #endif
 
@@ -309,7 +376,10 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
 // replacing vector instances of standard types, see https://stackoverflow.com/questions/8469138
 %include "std_string.i"
 %include "std_vector.i"
+%include "std_map.i"
 %template(StringVector) std::vector<std::string>;
+%template(IntVector) std::vector<int>;
+%template() std::map<std::string, std::string>;
 
 // exception handling
 %include "exception.i"
@@ -352,11 +422,15 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
 #include <libsumo/VehicleType.h>
 #include <libsumo/Vehicle.h>
 #include <libsumo/Person.h>
+#include <libsumo/Calibrator.h>
+#include <libsumo/BusStop.h>
+#include <libsumo/ParkingArea.h>
+#include <libsumo/ChargingStation.h>
+#include <libsumo/OverheadWire.h>
 %}
 
 // Process symbols in header
 %include "TraCIDefs.h"
-%template(TraCIConnectionVector) std::vector<libsumo::TraCIConnection>;
 %template(TraCILogicVector) std::vector<libsumo::TraCILogic>;
 %template(TraCIStageVector) std::vector<libsumo::TraCIStage>;
 %include "Edge.h"
@@ -374,6 +448,11 @@ static PyObject* parseSubscriptionMap(const std::map<int, std::shared_ptr<libsum
 %include "VehicleType.h"
 %include "Vehicle.h"
 %include "Person.h"
+%include "Calibrator.h"
+%include "BusStop.h"
+%include "ParkingArea.h"
+%include "ChargingStation.h"
+%include "OverheadWire.h"
 
 #ifdef SWIGPYTHON
 %pythoncode %{
@@ -383,6 +462,7 @@ def wrapAsClassMethod(func, module):
     return wrapper
 
 exceptions.TraCIException = TraCIException
+simulation.Stage = TraCIStage
 trafficlight.Phase = TraCIPhase
 trafficlight.Logic = TraCILogic
 vehicle.addFull = vehicle.add
@@ -392,7 +472,14 @@ vehicle.wantsAndCouldChangeLane = wrapAsClassMethod(_vehicle.VehicleDomain.wants
 vehicle.isStopped = wrapAsClassMethod(_vehicle.VehicleDomain.isStopped, vehicle)
 vehicle.setBusStop = wrapAsClassMethod(_vehicle.VehicleDomain.setBusStop, vehicle)
 vehicle.setParkingAreaStop = wrapAsClassMethod(_vehicle.VehicleDomain.setParkingAreaStop, vehicle)
+vehicle.getRightFollowers = wrapAsClassMethod(_vehicle.VehicleDomain.getRightFollowers, vehicle)
+vehicle.getRightLeaders = wrapAsClassMethod(_vehicle.VehicleDomain.getRightLeaders, vehicle)
+vehicle.getLeftFollowers = wrapAsClassMethod(_vehicle.VehicleDomain.getLeftFollowers, vehicle)
+vehicle.getLeftLeaders = wrapAsClassMethod(_vehicle.VehicleDomain.getLeftLeaders, vehicle)
+vehicle.getLaneChangeStatePretty = wrapAsClassMethod(_vehicle.VehicleDomain.getLaneChangeStatePretty, vehicle)
+vehicle._legacyGetLeader = True
 person.removeStages = wrapAsClassMethod(_person.PersonDomain.removeStages, person)
+_trafficlight.TraCIException = TraCIException
 trafficlight.setLinkState = wrapAsClassMethod(_trafficlight.TrafficLightDomain.setLinkState, trafficlight)
 %}
 #endif

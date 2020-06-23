@@ -1,24 +1,28 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2017-2019 German Aerospace Center (DLR) and others.
+// Copyright (C) 2017-2020 German Aerospace Center (DLR) and others.
 // TraaS module
 // Copyright (C) 2016-2017 Dresden University of Technology
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    CommandProcessor.java
 /// @author  Mario Krumnow
 /// @author  Evamarie Wiessner
 /// @date    2016
-/// @version $Id$
 ///
 //
 /****************************************************************************/
 package de.tudresden.sumo.util;
 
+import it.polito.appeal.traci.TraCIException;
 import it.polito.appeal.traci.TraCIException.UnexpectedData;
 import it.polito.appeal.traci.protocol.Command;
 import it.polito.appeal.traci.protocol.ResponseContainer;
@@ -78,6 +82,10 @@ public class CommandProcessor extends Query {
 
     public synchronized void do_setOrder(int index) throws IOException {
         doSetOrder(index);
+    }
+
+    public synchronized void do_close() throws IOException {
+        doClose();
     }
 
     public static SumoObject read(int type, Storage s) {
@@ -168,7 +176,7 @@ public class CommandProcessor extends Query {
                 int type0 = s.readInt();
 
                 s.readUnsignedByte();
-                int subParameter = s.readInt();
+                s.readInt();
 
                 s.readUnsignedByte();
                 int currentPhaseIndex = s.readInt();
@@ -367,6 +375,9 @@ public class CommandProcessor extends Query {
         ResponseContainer rc = queryAndVerifySingle(sc.cmd);
         Command resp = rc.getResponse();
 
+        if (resp == null) {
+            throw new TraCIException("Received null repsonse for command " + sc.input1 + " " + sc.input2 + ". (Maybe you need to use do_job_set?)");
+        }
         verifyGetVarResponse(resp, sc.response, sc.input2, sc.input3);
         verify("", sc.output_type, (int)resp.content().readUnsignedByte());
 
@@ -469,7 +480,7 @@ public class CommandProcessor extends Query {
                 SumoTLSController sp = new SumoTLSController();
                 for (int i = 0; i < length; i++) {
                     resp.content().readUnsignedByte(); // type compound
-                    int tmp = resp.content().readInt(); // 5
+                    resp.content().readInt(); // 5
                     //System.out.println("read compound " + tmp);
 
                     resp.content().readUnsignedByte();
@@ -492,7 +503,7 @@ public class CommandProcessor extends Query {
 
                     for (int i1 = 0; i1 < nbPhases; i1++) {
                         resp.content().readUnsignedByte(); // type compound
-                        int tmp2 = resp.content().readInt(); // 6
+                        resp.content().readInt(); // 6
                         //System.out.println("read compound " + tmp2);
 
                         resp.content().readUnsignedByte();
@@ -532,7 +543,7 @@ public class CommandProcessor extends Query {
                     //System.out.println("nParams=" + nParams);
                     for (int i2 = 0; i2 < nParams; i2++) {
                         resp.content().readUnsignedByte();
-                        int tmp3 = resp.content().readInt(); // 2
+                        resp.content().readInt(); // 2
                         //System.out.println("tmp3=" + tmp3);
                         String key = resp.content().readStringASCII();
                         //System.out.println("key=" + key);
@@ -776,7 +787,7 @@ public class CommandProcessor extends Query {
         content.readUnsignedByte();
         result.type = content.readInt();
 
-        int b2 = content.readUnsignedByte();
+        content.readUnsignedByte();
         result.vType = content.readStringASCII();
         content.readUnsignedByte();
         result.line = content.readStringASCII();

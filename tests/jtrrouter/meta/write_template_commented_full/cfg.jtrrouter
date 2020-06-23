@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on Thu May 23 23:01:54 2019 by Eclipse SUMO jtrrouter Version v1_2_0+0149-6b40db9d1b
+<!-- generated on Wed Feb  5 23:37:59 2020 by Eclipse SUMO jtrrouter Version v1_4_0+0947-40275488a3
 -->
 
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/jtrrouterConfiguration.xsd">
@@ -35,6 +35,9 @@
 
         <!-- Determines where to load PHEMlight definitions from. -->
         <phemlight-path value="./PHEMlight/" type="FILE"/>
+
+        <!-- Initialize a TAZ for every junction to use attributes toJunction and fromJunction -->
+        <junction-taz value="false" type="BOOL"/>
 
         <!-- Read turning ratios from FILE(s) -->
         <turn-ratio-files value="" synonymes="t turns" type="FILE"/>
@@ -108,20 +111,29 @@
         <!-- Use origin and destination zones (districts) for in- and output -->
         <with-taz value="false" type="BOOL"/>
 
+        <!-- Maximum distance when mapping input coordinates (fromXY etc.) to the road network -->
+        <mapmatch.distance value="100" type="FLOAT"/>
+
+        <!-- Match postions to junctions instead of edges -->
+        <mapmatch.junctions value="false" type="BOOL"/>
+
         <!-- Aggregate routing queries with the same origin -->
         <bulk-routing value="false" type="BOOL"/>
 
         <!-- The number of parallel execution threads used for routing -->
         <routing-threads value="0" type="INT"/>
 
+        <!-- Comma separated list of param keys to compare for additional restrictions -->
+        <restriction-params value="" type="STR[]"/>
+
         <!-- Routes are cut off when the route edges to net edges ratio is larger than FLOAT -->
         <max-edges-factor value="2" type="FLOAT"/>
 
-        <!-- Use STR as default turn definition -->
-        <turn-defaults value="30,50,20" synonymes="T" type="STR"/>
+        <!-- Use STR[] as default turn definition -->
+        <turn-defaults value="30,50,20" synonymes="T" type="STR[]"/>
 
-        <!-- Use STR as list of sink edges -->
-        <sink-edges value="" synonymes="sinks" type="STR"/>
+        <!-- Use STR[] as list of sink edges -->
+        <sink-edges value="" synonymes="sinks" type="STR[]"/>
 
         <!-- Whether all edges are allowed as sink edges -->
         <accept-all-destinations value="false" synonymes="A" type="BOOL"/>
@@ -131,6 +143,12 @@
 
         <!-- Allow to re-use a road -->
         <allow-loops value="false" type="BOOL"/>
+
+        <!-- Use all source edges as sink edges. -->
+        <sources-are-sinks value="false" synonymes="S" type="BOOL"/>
+
+        <!-- Subtract upstream flow when inserting a new flow. When option --sources-are-sinks is set, the upstream flow is limited to the value of the source flow and the remainig part termines. -->
+        <discount-sources value="false" synonymes="D" type="BOOL"/>
 
     </processing>
 
@@ -188,6 +206,9 @@
 
         <!-- Disables output of warnings -->
         <no-warnings value="false" synonymes="W suppress-warnings" type="BOOL"/>
+
+        <!-- Aggregate warnings of the same type whenever more than INT occur -->
+        <aggregate-warnings value="-1" type="INT"/>
 
         <!-- Writes all messages to FILE (implies verbose) -->
         <log value="" synonymes="l log-file" type="FILE"/>

@@ -1,22 +1,30 @@
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2013-2019 German Aerospace Center (DLR) and others.
-# This program and the accompanying materials
-# are made available under the terms of the Eclipse Public License v2.0
-# which accompanies this distribution, and is available at
-# http://www.eclipse.org/legal/epl-v20.html
-# SPDX-License-Identifier: EPL-2.0
+# Copyright (C) 2013-2020 German Aerospace Center (DLR) and others.
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# https://www.eclipse.org/legal/epl-2.0/
+# This Source Code may also be made available under the following Secondary
+# Licenses when the conditions for such availability set forth in the Eclipse
+# Public License 2.0 are satisfied: GNU General Public License, version 2
+# or later which is available at
+# https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+# SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 
 # @file    geomhelper.py
 # @author  Daniel Krajzewicz
 # @author  Jakob Erdmann
 # @author  Michael Behrisch
 # @date    2013-02-25
-# @version $Id$
 
 from __future__ import absolute_import
 import math
 
 INVALID_DISTANCE = -1
+
+# back-ported from python 3 for backward compatibility
+# https://www.python.org/dev/peps/pep-0485/#proposed-implementation
+def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
+    return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
 
 
 def distance(p1, p2):
@@ -117,11 +125,17 @@ def distancePointToPolygon(point, polygon, perpendicular=False):
 
 
 def positionAtOffset(p1, p2, offset):
-    if offset == 0.:  # for pathological cases with dist == 0 and offset == 0
+    if isclose(offset, 0.):  # for pathological cases with dist == 0 and offset == 0
         return p1
+
     dist = distance(p1, p2)
-    if dist < offset:
+
+    if isclose(dist, offset):
+        return p2
+
+    if offset > dist:
         return None
+
     return (p1[0] + (p2[0] - p1[0]) * (offset / dist), p1[1] + (p2[1] - p1[1]) * (offset / dist))
 
 

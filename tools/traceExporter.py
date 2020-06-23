@@ -1,11 +1,15 @@
 #!/usr/bin/env python
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2013-2019 German Aerospace Center (DLR) and others.
-# This program and the accompanying materials
-# are made available under the terms of the Eclipse Public License v2.0
-# which accompanies this distribution, and is available at
-# http://www.eclipse.org/legal/epl-v20.html
-# SPDX-License-Identifier: EPL-2.0
+# Copyright (C) 2013-2020 German Aerospace Center (DLR) and others.
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# https://www.eclipse.org/legal/epl-2.0/
+# This Source Code may also be made available under the following Secondary
+# Licenses when the conditions for such availability set forth in the Eclipse
+# Public License 2.0 are satisfied: GNU General Public License, version 2
+# or later which is available at
+# https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+# SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 
 # @file    traceExporter.py
 # @author  Daniel Krajzewicz
@@ -13,13 +17,13 @@
 # @author  Michael Behrisch
 # @author  Evamarie Wiessner
 # @date    2013-01-15
-# @version $Id$
 
 
 from __future__ import print_function
 from __future__ import absolute_import
 import os
 import sys
+import gzip
 import random
 import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', 'tools'))
@@ -28,14 +32,7 @@ sys.path.append(os.path.join(os.environ.get(
 
 from sumolib.miscutils import getSocketStream  # noqa
 import sumolib.net  # noqa
-import sumolib.output.convert.phem as phem  # noqa
-import sumolib.output.convert.omnet as omnet  # noqa
-import sumolib.output.convert.shawn as shawn  # noqa
-import sumolib.output.convert.ns2 as ns2  # noqa
-import sumolib.output.convert.gpsdat as gpsdat  # noqa
-import sumolib.output.convert.gpx as gpx  # noqa
-import sumolib.output.convert.poi as poi  # noqa
-import sumolib.output.convert.fcdfilter as fcdfilter  # noqa
+from sumolib.output.convert import phem, omnet, shawn, ns2, gpsdat, kml, gpx, poi, fcdfilter, keplerjson  # noqa
 
 
 class FCDTimeEntry:
@@ -56,6 +53,8 @@ def disturb_gps(x, y, deviation):
 def _getOutputStream(name):
     if not name:
         return None
+    if name.endswith(".gz"):
+        return gzip.open(name, "wt")
     return open(name, "w")
 
 
@@ -90,7 +89,7 @@ def procFCDStream(fcdstream, options):
     chosen = {}
     for q in fcdstream:
         pt = lt
-        lt = float(q.time)
+        lt = sumolib.miscutils.parseTime(q.time)
         if options.begin and options.begin > lt:
             continue  # do not export steps before a set begin
         if options.end and options.end <= lt:
@@ -190,7 +189,9 @@ output format. Optionally the output can be sampled, filtered and distorted.
     # GPSDAT
     optParser.add_option("--gpsdat-output", dest="gpsdat", metavar="FILE",
                          help="Defines the name of the gpsdat file to generate")
-
+    # KML
+    optParser.add_option("--kml-output", dest="kml", metavar="FILE",
+                         help="Defines the name of the kml file to generate")
     # GPX
     optParser.add_option("--gpx-output", dest="gpx", metavar="FILE",
                          help="Defines the name of the gpx file to generate")
@@ -200,6 +201,9 @@ output format. Optionally the output can be sampled, filtered and distorted.
     # FCD
     optParser.add_option("--fcd-filter", dest="fcdfilter", metavar="FILE",
                          help="Defines the name of the filter definition file")
+    # kepler.gl JSON
+    optParser.add_option("--keplerjson-output", dest="keplerjson", metavar="FILE",
+                         help="Defines the name of the kelper.gl JSON file to generate")
     optParser.add_option("--fcd-filter-comment", dest="fcdcomment",
                          help="Extra comments to include in fcd file")
     optParser.add_option("--fcd-filter-type", dest="fcdtype",
@@ -245,6 +249,11 @@ output format. Optionally the output can be sampled, filtered and distorted.
         runMethod(options.fcd, options.gpsdat, gpsdat.fcd2gpsdat, options)
     # ----- GPSDAT
 
+    # ----- KML
+    if options.kml:
+        runMethod(options.fcd, options.kml, kml.fcd2kml, options)
+    # ----- KML
+
     # ----- GPX
     if options.gpx:
         runMethod(options.fcd, options.gpx, gpx.fcd2gpx, options)
@@ -260,6 +269,11 @@ output format. Optionally the output can be sampled, filtered and distorted.
         runMethod(options.fcd, None, fcdfilter.fcdfilter, options,
                   {"filter": options.fcdfilter, "comment": options.fcdcomment, "type": options.fcdtype})
     # ----- FCD
+
+    # ----- kepler.gl JSON
+    if options.keplerjson:
+        runMethod(options.fcd, options.keplerjson, keplerjson.fcd2keplerjson, options)
+    # ----- kepler.gl JSON
 
     # ----- ns2
     if options.ns2mobility or options.ns2config or options.ns2activity:

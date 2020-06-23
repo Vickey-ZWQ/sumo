@@ -31,6 +31,9 @@ Source0:        https://sumo.dlr.de/daily/sumo-all-%{version}.tar.gz
 BuildRequires:  gcc-c++
 BuildRequires:  cmake
 BuildRequires:  python
+%if 0%{?suse_version}
+BuildRequires:  python-xml
+%endif
 BuildRequires:  help2man
 BuildRequires:  pkgconfig
 BuildRequires:  unzip
@@ -61,6 +64,14 @@ BuildRequires:  pkgconfig(xrandr)
 highly portable, microscopic traffic simulation package
 designed to handle large road networks.
 
+%package -n libsumocpp
+Summary:        Eclipse SUMO - Microscopic Traffic Simulation Library
+Group:          Development/Libraries/C and C++
+
+%description -n libsumocpp
+libsumocpp provides the C++-API for adding traffic simulation
+functionality to your own application.
+
 %if 0%{?fedora_version}
 %global debug_package %{nil}
 %endif
@@ -75,29 +86,16 @@ find . -name "*.py" -o -name "*.pyw" | xargs sed -i 's,^#!%{_bindir}/env python$
 %endif
 
 %build
-%if 0%{?centos_version} || 0%{?scientificlinux_version}
-autoreconf -i
-%configure
-%else
 mkdir cmake-build
 cd cmake-build
 cmake -DCMAKE_INSTALL_PREFIX:PATH=/usr ..
-%endif
 make %{?_smp_mflags}
 make %{?_smp_mflags} man
 
 %install
-%if 0%{?centos_version} || 0%{?scientificlinux_version}
-%make_install
-%else
 cd cmake-build
 %make_install
 cd ..
-%endif
-mkdir -p %{buildroot}%{_datadir}/sumo
-cp -a tools data %{buildroot}%{_datadir}/sumo
-mkdir -p %{buildroot}%{_bindir}
-ln -s %{_bindir} %{buildroot}%{_datadir}/sumo/bin
 ln -s %{_datadir}/sumo/tools/assign/duaIterate.py %{buildroot}%{_bindir}/duaIterate.py
 ln -s %{_datadir}/sumo/tools/osmWebWizard.py %{buildroot}%{_bindir}/osmWebWizard.py
 ln -s %{_datadir}/sumo/tools/randomTrips.py %{buildroot}%{_bindir}/randomTrips.py
@@ -117,6 +115,13 @@ install -p -m 644 build/package/%{name}.xml %{buildroot}%{_datadir}/mime/applica
 %fdupes %{buildroot}
 %endif
 
+#%check
+#cd cmake-build
+#make %{?_smp_mflags} test
+
+%post -n libsumocpp -p /sbin/ldconfig
+%postun -n libsumocpp -p /sbin/ldconfig
+
 %files
 %defattr(-,root,root)
 %{_bindir}/*
@@ -128,11 +133,19 @@ install -p -m 644 build/package/%{name}.xml %{buildroot}%{_datadir}/mime/applica
 %license LICENSE
 %endif
 %{_mandir}/man1/*
-%{_sysconfdir}/profile.d/%{name}.*sh
+%config %{_sysconfdir}/profile.d/%{name}.*sh
 %{_datadir}/applications/%{name}.desktop
 %{_datadir}/pixmaps/%{name}.png
 %if 0%{?suse_version}
 %{_datadir}/mime/application
 %endif
+
+%files -n libsumocpp
+%if 0%{?suse_version} < 1500
+%doc LICENSE
+%else
+%license LICENSE
+%endif
+%{_libdir}/libsumocpp.so
 
 %changelog

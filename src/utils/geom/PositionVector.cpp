@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    PositionVector.cpp
 /// @author  Daniel Krajzewicz
@@ -13,15 +17,9 @@
 /// @author  Michael Behrisch
 /// @author  Walter Bamberger
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // A list of positions
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <queue>
@@ -82,22 +80,25 @@ PositionVector::around(const Position& p, double offset) const {
         return tmp.around(p);
     }
     double angle = 0;
-    for (const_iterator i = begin(); i != end() - 1; i++) {
+    // iterate over all points, and obtain angle between current and next
+    for (const_iterator i = begin(); i != (end() - 1); i++) {
         Position p1(
-            (*i).x() - p.x(),
-            (*i).y() - p.y());
+            i->x() - p.x(),
+            i->y() - p.y());
         Position p2(
-            (*(i + 1)).x() - p.x(),
-            (*(i + 1)).y() - p.y());
+            (i + 1)->x() - p.x(),
+            (i + 1)->y() - p.y());
         angle += GeomHelper::angle2D(p1, p2);
     }
+    // add angle between last and first point
     Position p1(
-        (*(end() - 1)).x() - p.x(),
-        (*(end() - 1)).y() - p.y());
+        (end() - 1)->x() - p.x(),
+        (end() - 1)->y() - p.y());
     Position p2(
-        (*(begin())).x() - p.x(),
-        (*(begin())).y() - p.y());
+        begin()->x() - p.x(),
+        begin()->y() - p.y());
     angle += GeomHelper::angle2D(p1, p2);
+    // if angle is less than PI, then point lying in Polygon
     return (!(fabs(angle) < M_PI));
 }
 
@@ -247,6 +248,9 @@ PositionVector::positionAtOffset(double pos, double lateralOffset) const {
     if (size() == 0) {
         return Position::INVALID;
     }
+    if (size() == 1) {
+        return front();
+    }
     const_iterator i = begin();
     double seenLength = 0;
     do {
@@ -268,6 +272,9 @@ Position
 PositionVector::positionAtOffset2D(double pos, double lateralOffset) const {
     if (size() == 0) {
         return Position::INVALID;
+    }
+    if (size() == 1) {
+        return front();
     }
     const_iterator i = begin();
     double seenLength = 0;
@@ -406,11 +413,19 @@ Position
 PositionVector::getCentroid() const {
     if (size() == 0) {
         return Position::INVALID;
+    } else if (size() == 1) {
+        return (*this)[0];
+    } else if (size() == 2) {
+        return ((*this)[0] + (*this)[1]) * 0.5;
     }
     PositionVector tmp = *this;
     if (!isClosed()) { // make sure its closed
         tmp.push_back(tmp[0]);
     }
+    // shift to origin to increase numerical stability
+    Position offset = tmp[0];
+    Position result;
+    tmp.sub(offset);
     const int endIndex = (int)tmp.size() - 1;
     double div = 0; // 6 * area including sign
     double x = 0;
@@ -424,7 +439,7 @@ PositionVector::getCentroid() const {
             y += (tmp[i].y() + tmp[i + 1].y()) * z;
         }
         div *= 3; //  6 / 2, the 2 comes from the area formula
-        return Position(x / div, y / div);
+        result = Position(x / div, y / div);
     } else {
         // compute by decomposing into line segments
         // http://en.wikipedia.org/wiki/Centroid#By_geometric_decomposition
@@ -437,10 +452,11 @@ PositionVector::getCentroid() const {
         }
         if (lengthSum == 0) {
             // it is probably only one point
-            return tmp[0];
+            result = tmp[0];
         }
-        return Position(x / lengthSum, y / lengthSum);
+        result = Position(x / lengthSum, y / lengthSum) + offset;
     }
+    return result + offset;
 }
 
 
@@ -525,7 +541,7 @@ PositionVector::partialWithin(const AbstractPoly& poly, double offset) const {
     if (size() < 2) {
         return false;
     }
-    for (const_iterator i = begin(); i != end() - 1; i++) {
+    for (const_iterator i = begin(); i != end(); i++) {
         if (poly.around(*i, offset)) {
             return true;
         }
@@ -948,7 +964,7 @@ PositionVector::indexOfClosest(const Position& p) const {
 
 
 int
-PositionVector::insertAtClosest(const Position& p) {
+PositionVector::insertAtClosest(const Position& p, bool interpolateZ) {
     if (size() == 0) {
         return -1;
     }
@@ -963,7 +979,16 @@ PositionVector::insertAtClosest(const Position& p) {
             minDist = dist;
         }
     }
-    insert(begin() + insertionIndex, p);
+    // check if we have to adjust Position Z
+    if (interpolateZ) {
+        // obtain previous and next Z
+        const double previousZ = (begin() + (insertionIndex - 1))->z();
+        const double nextZ = (begin() + insertionIndex)->z();
+        // insert new position using x and y of p, and the new z
+        insert(begin() + insertionIndex, Position(p.x(), p.y(), ((previousZ + nextZ) / 2.0)));
+    } else {
+        insert(begin() + insertionIndex, p);
+    }
     return insertionIndex;
 }
 
@@ -1255,6 +1280,26 @@ PositionVector::distance2D(const Position& p, bool perpendicular) const {
 
 
 void
+PositionVector::push_front(const Position& p) {
+    if (empty()) {
+        push_back(p);
+    } else {
+        insert(begin(), p);
+    }
+}
+
+
+void
+PositionVector::pop_front() {
+    if (empty()) {
+        throw ProcessError("PositionVector is empty");
+    } else {
+        erase(begin());
+    }
+}
+
+
+void
 PositionVector::push_back_noDoublePos(const Position& p) {
     if (size() == 0 || !p.almostSame(back())) {
         push_back(p);
@@ -1264,8 +1309,8 @@ PositionVector::push_back_noDoublePos(const Position& p) {
 
 void
 PositionVector::push_front_noDoublePos(const Position& p) {
-    if (size() == 0 || !p.almostSame(front())) {
-        insert(begin(), p);
+    if ((size() == 0) || !p.almostSame(front())) {
+        push_front(p);
     }
 }
 
@@ -1309,7 +1354,13 @@ PositionVector::removeDoublePoints(double minDist, bool assertLength) {
         iterator last = begin();
         for (iterator i = begin() + 1; i != end() && (!assertLength || size() > 2);) {
             if (last->almostSame(*i, minDist)) {
-                i = erase(i);
+                if (i + 1 == end()) {
+                    // special case: keep the last point and remove the next-to-last
+                    erase(last);
+                    i = end();
+                } else {
+                    i = erase(i);
+                }
             } else {
                 last = i;
                 ++i;
@@ -1497,7 +1548,7 @@ PositionVector::simplified() const {
 
 
 PositionVector
-PositionVector::getOrthogonal(const Position& p, double extend, bool before, double length) const {
+PositionVector::getOrthogonal(const Position& p, double extend, bool before, double length, double deg) const {
     PositionVector result;
     PositionVector tmp = *this;
     tmp.extrapolate2D(extend);
@@ -1508,15 +1559,20 @@ PositionVector::getOrthogonal(const Position& p, double extend, bool before, dou
     }
     Position base = tmp.positionAtOffset2D(baseOffset);
     const int closestIndex = tmp.indexOfClosest(base);
+    const double closestOffset = tmp.offsetAtIndex2D(closestIndex);
     result.push_back(base);
-    if (fabs(baseOffset - tmp.offsetAtIndex2D(closestIndex)) > NUMERICAL_EPS) {
+    if (fabs(baseOffset - closestOffset) > NUMERICAL_EPS) {
         result.push_back(tmp[closestIndex]);
+        if ((closestOffset < baseOffset) != before) {
+            deg *= -1;
+        }
     } else if (before) {
         // take the segment before closestIndex if possible
         if (closestIndex > 0) {
             result.push_back(tmp[closestIndex - 1]);
         } else {
             result.push_back(tmp[1]);
+            deg *= -1;
         }
     } else {
         // take the segment after closestIndex if possible
@@ -1524,12 +1580,13 @@ PositionVector::getOrthogonal(const Position& p, double extend, bool before, dou
             result.push_back(tmp[closestIndex + 1]);
         } else {
             result.push_back(tmp[-1]);
+            deg *= -1;
         }
     }
     result = result.getSubpart2D(0, length);
     // rotate around base
     result.add(base * -1);
-    result.rotate2D(DEG2RAD(90));
+    result.rotate2D(DEG2RAD(deg));
     result.add(base);
     return result;
 }
@@ -1552,7 +1609,7 @@ PositionVector::smoothedZFront(double dist) const {
         int iLast = indexOfClosest(pDist);
         // prevent close spacing to reduce impact of rounding errors in z-axis
         if (pDist.distanceTo2D((*this)[iLast]) > POSITION_EPS * 20) {
-            iLast = result.insertAtClosest(pDist);
+            iLast = result.insertAtClosest(pDist, false);
         }
         double dist2 = result.offsetAtIndex2D(iLast);
         const double dz2 = result[iLast].z() - z0;

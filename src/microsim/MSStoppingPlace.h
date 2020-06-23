@@ -1,27 +1,24 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2005-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2005-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSStoppingPlace.h
 /// @author  Daniel Krajzewicz
 /// @author  Michael Behrisch
 /// @date    Mon, 13.12.2005
-/// @version $Id$
 ///
 // A lane area vehicles can halt at
 /****************************************************************************/
-#ifndef MSStoppingPlace_h
-#define MSStoppingPlace_h
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include <vector>
@@ -71,7 +68,8 @@ public:
     MSStoppingPlace(const std::string& id,
                     const std::vector<std::string>& lines, MSLane& lane,
                     double begPos, double endPos, const std::string name = "",
-                    int capacity = 0);
+                    int capacity = 0,
+                    double parkingLength = 0);
 
 
 
@@ -111,7 +109,7 @@ public:
      * @param[in] what The end halting position of the vehicle
      * @see computeLastFreePos
      */
-    void enter(SUMOVehicle* what, double beg, double end);
+    void enter(SUMOVehicle* veh, bool parking);
 
 
     /** @brief Called if a vehicle leaves this stop
@@ -201,6 +199,15 @@ public:
 
     static int getPersonsAbreast(double length);
 
+    /// @brief get list of vehicles waiting at this stop
+    std::vector<const SUMOVehicle*> getStoppedVehicles() const;
+
+    /// @brief get list of persons waiting at this stop
+    std::vector<MSTransportable*> getWaitingPersons() const;
+
+    /** @brief Remove all vehicles before quick-loading state */
+    void clearState();
+
 protected:
     /** @brief Computes the last free position on this stop
      *
@@ -217,7 +224,7 @@ protected:
     std::vector<std::string> myLines;
 
     /// @brief A map from objects (vehicles) to the areas they acquire after entering the stop
-    std::map<const SUMOVehicle*, std::pair<double, double> > myEndPositions;
+    std::map<const SUMOVehicle*, std::pair<double, double>, ComparatorNumericalIdLess> myEndPositions;
 
     /// @brief The lane this bus stop is located at
     const MSLane& myLane;
@@ -237,6 +244,9 @@ protected:
     /// @brief The number of transportables that can wait here
     const int myTransportableCapacity;
 
+    /// @brief the scaled space capacity for parking vehicles
+    const double myParkingFactor;
+
 protected:
 
     /// @brief Persons waiting at this stop (mapped to waiting position)
@@ -255,9 +265,3 @@ private:
 
 
 };
-
-
-#endif
-
-/****************************************************************************/
-

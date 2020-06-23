@@ -1,3 +1,6 @@
+# test attributes fromJunction toJunction and viaJunctions
+junctionTaz
+
 # Copy of basic
 basic
 
@@ -18,6 +21,9 @@ car_walk_sidewalk
 
 # car and walk possible with arrivalpos 0
 car_walk_arrivalpos
+
+# car and walk possible with departPos > 0
+car_walk_departPos
 
 # public transport and walk possible
 public_walk
@@ -85,6 +91,9 @@ access_walk
 walk_access_walk
 car_public_walk
 
+# Copy of car_public_walk
+car_public_walk_transfer_forbidden
+
 # bug: person does not board the train when changing access position to 450
 car_public_walk2
 
@@ -116,6 +125,10 @@ late_pt
 # putting it here because it covers a lot of different inputs
 public_walk_human_readable_time
 
+# Test for parsing and writing human-readable-time
+# putting it here because it covers a lot of different inputs
+public_walk_human_readable_step2
+
 # Copy of car_public_walk
 bike_public_walk
 
@@ -139,4 +152,7 @@ randomized_weights
 
 # missing the bus and rerouting
 missed_bus_reroute
+
+# trip with fromTaz and toTaz
+taz
 errors

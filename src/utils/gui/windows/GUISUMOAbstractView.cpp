@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GUISUMOAbstractView.cpp
 /// @author  Daniel Krajzewicz
@@ -14,15 +18,9 @@
 /// @author  Laura Bieker
 /// @author  Andreas Gaubatz
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // The base class for a view
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <iostream>
@@ -125,7 +123,7 @@ GUISUMOAbstractView::GUISUMOAbstractView(FXComposite* p, GUIMainWindow& app, GUI
     FXGLCanvas(p, glVis, share, p, MID_GLCANVAS, LAYOUT_SIDE_TOP | LAYOUT_FILL_X | LAYOUT_FILL_Y, 0, 0, 0, 0),
     myApp(&app),
     myParent(parent),
-    myGrid(&((SUMORTree&)grid)),
+    myGrid(&grid),
     myChanger(nullptr),
     myMouseHotspotX(app.getDefaultCursor()->getHotX()),
     myMouseHotspotY(app.getDefaultCursor()->getHotY()),
@@ -136,7 +134,8 @@ GUISUMOAbstractView::GUISUMOAbstractView(FXComposite* p, GUIMainWindow& app, GUI
     myViewportChooser(nullptr),
     myWindowCursorPositionX(getWidth() / 2),
     myWindowCursorPositionY(getHeight() / 2),
-    myVisualizationChanger(nullptr) {
+    myVisualizationChanger(nullptr),
+    myFrameDrawTime(0) {
     setTarget(this);
     enable();
     flags |= FLAG_ENABLED;
@@ -159,6 +158,9 @@ GUISUMOAbstractView::~GUISUMOAbstractView() {
     // cleanup decals
     for (std::vector<GUISUMOAbstractView::Decal>::iterator it = myDecals.begin(); it != myDecals.end(); ++it) {
         delete it->image;
+    }
+    for (auto i : myAdditionallyDrawn) {
+        i.first->removeActiveAddVisualisation(this, ~0); // remove all
     }
 }
 
@@ -191,10 +193,10 @@ GUISUMOAbstractView::getPositionInformation() const {
 
 
 Position
-GUISUMOAbstractView::snapToActiveGrid(const Position& pos) const {
+GUISUMOAbstractView::snapToActiveGrid(const Position& pos, bool snapXY) const {
     Position result = pos;
     if (myVisualizationSettings->showGrid) {
-        if (pos.z() == 0) {
+        if (snapXY) {
             const double xRest = std::fmod(pos.x(), myVisualizationSettings->gridXSize) + (pos.x() < 0 ? myVisualizationSettings->gridXSize : 0);
             const double yRest = std::fmod(pos.y(), myVisualizationSettings->gridYSize) + (pos.y() < 0 ? myVisualizationSettings->gridYSize : 0);
             result.setx(pos.x() - xRest + (xRest < myVisualizationSettings->gridXSize * 0.5 ? 0 : myVisualizationSettings->gridXSize));
@@ -227,12 +229,6 @@ GUISUMOAbstractView::screenPos2NetPos(int x, int y) const {
 void
 GUISUMOAbstractView::addDecals(const std::vector<Decal>& decals) {
     myDecals.insert(myDecals.end(), decals.begin(), decals.end());
-}
-
-
-GUIVisualizationSettings*
-GUISUMOAbstractView::getVisualisationSettings() {
-    return myVisualizationSettings;
 }
 
 
@@ -303,12 +299,7 @@ GUISUMOAbstractView::paintGL() {
 
     Boundary bound = applyGLTransform();
     doPaintGL(GL_RENDER, bound);
-    if (myVisualizationSettings->showSizeLegend) {
-        displayLegend();
-    }
-    if (myVisualizationSettings->showColorLegend) {
-        displayColorLegend();
-    }
+    displayLegends();
     const long end = SysUtils::getCurrentMillis();
     myFrameDrawTime = end - start;
     if (myVisualizationSettings->fps) {
@@ -330,9 +321,18 @@ GUISUMOAbstractView::getObjectUnderCursor() {
 
 
 std::vector<GUIGlID>
-GUISUMOAbstractView::getObjectstUnderCursor() {
-
+GUISUMOAbstractView::getObjectsUnderCursor() {
     return getObjectsAtPosition(getPositionInformation(), SENSITIVITY);
+}
+
+
+std::vector<GUIGlObject*>
+GUISUMOAbstractView::getGUIGlObjectsUnderGrippedCursor() {
+    if (myVisualizationSettings->showGrid) {
+        return getGUIGlObjectsAtPosition(snapToActiveGrid(getPositionInformation()), SENSITIVITY);
+    } else {
+        return getGUIGlObjectsAtPosition(getPositionInformation(), SENSITIVITY);
+    }
 }
 
 
@@ -344,10 +344,11 @@ GUISUMOAbstractView::getGUIGlObjectsUnderCursor() {
 
 GUIGlID
 GUISUMOAbstractView::getObjectAtPosition(Position pos) {
-    Boundary selection;
-    selection.add(pos);
-    selection.grow(SENSITIVITY);
-    const std::vector<GUIGlID> ids = getObjectsInBoundary(selection);
+    // calculate a boundary for the given position
+    Boundary positionBoundary;
+    positionBoundary.add(pos);
+    positionBoundary.grow(SENSITIVITY);
+    const std::vector<GUIGlID> ids = getObjectsInBoundary(positionBoundary, true);
     // Interpret results
     int idMax = 0;
     double maxLayer = -std::numeric_limits<double>::max();
@@ -400,7 +401,7 @@ GUISUMOAbstractView::getObjectsAtPosition(Position pos, double radius) {
     selection.add(pos);
     selection.grow(radius);
     // obtain GUIGlID of objects in boundary
-    const std::vector<GUIGlID> ids = getObjectsInBoundary(selection);
+    const std::vector<GUIGlID> ids = getObjectsInBoundary(selection, true);
     // iterate over obtained GUIGlIDs
     for (const auto& i : ids) {
         // obtain GUIGlObject
@@ -435,7 +436,7 @@ GUISUMOAbstractView::getGUIGlObjectsAtPosition(Position pos, double radius) {
     selection.add(pos);
     selection.grow(radius);
     // obtain GUIGlID of objects in boundary
-    const std::vector<GUIGlID> ids = getObjectsInBoundary(selection);
+    const std::vector<GUIGlID> ids = getObjectsInBoundary(selection, true);
     // iterate over obtained GUIGlIDs
     for (const auto& i : ids) {
         // obtain GUIGlObject
@@ -457,7 +458,7 @@ GUISUMOAbstractView::getGUIGlObjectsAtPosition(Position pos, double radius) {
 
 
 std::vector<GUIGlID>
-GUISUMOAbstractView::getObjectsInBoundary(Boundary bound) {
+GUISUMOAbstractView::getObjectsInBoundary(Boundary bound, bool singlePosition) {
     const int NB_HITS_MAX = 1024 * 1024;
     // Prepare the selection mode
     static GUIGlID hits[NB_HITS_MAX];
@@ -465,14 +466,23 @@ GUISUMOAbstractView::getObjectsInBoundary(Boundary bound) {
     glSelectBuffer(NB_HITS_MAX, hits);
     glInitNames();
 
+    myVisualizationSettings->scale = m2p(SUMO_const_laneWidth);
     Boundary oldViewPort = myChanger->getViewport(false); // backup the actual viewPort
     myChanger->setViewport(bound);
     bound = applyGLTransform(false);
-
-    // paint in select mode
-    myVisualizationSettings->drawForSelecting = true;
+    // enable draw for selecting (to draw objects with less details)
+    if (singlePosition) {
+        myVisualizationSettings->drawForPositionSelection = true;
+    } else {
+        myVisualizationSettings->drawForRectangleSelection = true;
+    }
     int hits2 = doPaintGL(GL_SELECT, bound);
-    myVisualizationSettings->drawForSelecting = false;
+    // disable draw for selecting (to draw objects with less details)
+    if (singlePosition) {
+        myVisualizationSettings->drawForPositionSelection = false;
+    } else {
+        myVisualizationSettings->drawForRectangleSelection = false;
+    }
     // Get the results
     nb_hits = glRenderMode(GL_RENDER);
     if (nb_hits == -1) {
@@ -624,7 +634,20 @@ GUISUMOAbstractView::displayLegend() {
 }
 
 void
-GUISUMOAbstractView::displayColorLegend() {
+GUISUMOAbstractView::displayLegends() {
+    if (myVisualizationSettings->showSizeLegend) {
+        displayLegend();
+    }
+    if (myVisualizationSettings->showColorLegend) {
+        displayColorLegend(myVisualizationSettings->getLaneEdgeScheme(), false);
+    }
+    if (myVisualizationSettings->showVehicleColorLegend) {
+        displayColorLegend(myVisualizationSettings->vehicleColorer.getScheme(), true);
+    }
+}
+
+void
+GUISUMOAbstractView::displayColorLegend(const GUIColorScheme& scheme, bool leftSide) {
     // compute the scale bar length
     glLineWidth(1.0);
     glMatrixMode(GL_PROJECTION);
@@ -640,17 +663,28 @@ GUISUMOAbstractView::displayColorLegend() {
     glPushMatrix();
     glTranslated(0, 0, z);
 
-    GUIColorScheme& scheme = myVisualizationSettings->getLaneEdgeScheme();
     const bool fixed = scheme.isFixed();
     const int numColors = (int)scheme.getColors().size();
 
     // vertical
-    const double right = 0.98;
-    const double left = 0.95;
+    double right = 0.98;
+    double left = 0.95;
+    double textX = left - 0.01;
+    FONSalign textAlign = FONS_ALIGN_RIGHT;
     const double top = -0.8;
     const double bot = 0.8;
     const double dy = (top - bot) / numColors;
     const double bot2 = fixed ? bot : bot + dy / 2;
+    // legend placement
+    if (leftSide) {
+        right = -right;
+        left = -left;
+        std::swap(right, left);
+        textX = right + 0.01;
+        textAlign = FONS_ALIGN_LEFT;
+    }
+    // draw black boundary around legend colors
+    glColor3d(0, 0, 0);
     glBegin(GL_LINES);
     glVertex2d(right, top);
     glVertex2d(right, bot2);
@@ -696,7 +730,7 @@ GUISUMOAbstractView::displayColorLegend() {
 
         const double threshold = scheme.getThresholds()[i];
         std::string name = scheme.getNames()[i];
-        std::string text = fixed ? name : toString(threshold);
+        std::string text = fixed || threshold == GUIVisualizationSettings::MISSING_DATA ? name : toString(threshold);
 
         const double bgShift = 0.0;
         const double textShift = 0.02;
@@ -710,7 +744,7 @@ GUISUMOAbstractView::displayColorLegend() {
         glVertex2d(left, topi + fontHeight * (1 + bgShift));
         glEnd();
         glTranslated(0, 0, -0.1);
-        GLHelper::drawText(text, Position(left - 0.01, topi + textShift), 0, fontHeight, RGBColor::BLACK, 0, FONS_ALIGN_RIGHT, fontWidth);
+        GLHelper::drawText(text, Position(textX, topi + textShift), 0, fontHeight, RGBColor::BLACK, 0, textAlign, fontWidth);
     }
     glPopMatrix();
     // restore matrices
@@ -782,7 +816,7 @@ GUISUMOAbstractView::centerTo(GUIGlID id, bool applyZoom, double zoomDist) {
 
 
 void
-GUISUMOAbstractView::centerTo(const Position &pos, bool applyZoom, double zoomDist) {
+GUISUMOAbstractView::centerTo(const Position& pos, bool applyZoom, double zoomDist) {
     // called during tracking. update is triggered somewhere else
     myChanger->centerTo(pos, zoomDist, applyZoom);
     updatePositionInformation();
@@ -876,7 +910,7 @@ GUISUMOAbstractView::onLeftBtnPress(FXObject*, FXSelector, void* data) {
     FXEvent* e = (FXEvent*) data;
     // check whether the selection-mode is activated
     if ((e->state & CONTROLMASK) != 0) {
-        // try to get the object-id if so
+        // toggle selection of object under cursor
         if (makeCurrent()) {
             int id = getObjectUnderCursor();
             if (id != 0) {
@@ -888,6 +922,24 @@ GUISUMOAbstractView::onLeftBtnPress(FXObject*, FXSelector, void* data) {
                 //  so we should update the screen again...
                 update();
             }
+        }
+    }
+    if ((e->state & SHIFTMASK) != 0) {
+        // track vehicle or person under cursor
+        if (makeCurrent()) {
+            int id = getObjectUnderCursor();
+            if (id != 0) {
+                GUIGlObject* o = GUIGlObjectStorage::gIDStorage.getObjectBlocking(id);
+                if (o != nullptr) {
+                    if (o->getType() == GLO_VEHICLE || o->getType() == GLO_PERSON) {
+                        startTrack(id);
+                    } else if (o->getType() == GLO_REROUTER_EDGE) {
+                        o->onLeftBtnPress(data);
+                        update();
+                    }
+                }
+            }
+            makeNonCurrent();
         }
     }
     myChanger->onLeftBtnPress(data);
@@ -1036,6 +1088,20 @@ GUISUMOAbstractView::onKeyPress(FXObject* o, FXSelector sel, void* data) {
     if (myPopup != nullptr) {
         return myPopup->onKeyPress(o, sel, data);
     } else {
+        FXEvent* e = (FXEvent*) data;
+        if (e->state & CONTROLMASK) {
+            if (e->code == FX::KEY_Page_Up) {
+                myVisualizationSettings->gridXSize *= 2;
+                myVisualizationSettings->gridYSize *= 2;
+                update();
+                return 1;
+            } else if (e->code == FX::KEY_Page_Down) {
+                myVisualizationSettings->gridXSize /= 2;
+                myVisualizationSettings->gridYSize /= 2;
+                update();
+                return 1;
+            }
+        }
         FXGLCanvas::onKeyPress(o, sel, data);
         return myChanger->onKeyPress(data);
     }
@@ -1055,19 +1121,19 @@ GUISUMOAbstractView::onKeyRelease(FXObject* o, FXSelector sel, void* data) {
 
 // ------------ Dealing with snapshots
 void
-GUISUMOAbstractView::addSnapshot(SUMOTime time, const std::string& file, const int width, const int height) {
+GUISUMOAbstractView::addSnapshot(SUMOTime time, const std::string& file, const int w, const int h) {
 #ifdef DEBUG_SNAPSHOT
     std::cout << "add snapshot time=" << time << " file=" << file << "\n";
 #endif
     FXMutexLock lock(mySnapshotsMutex);
-    mySnapshots[time].push_back(std::make_tuple(file, width, height));
+    mySnapshots[time].push_back(std::make_tuple(file, w, h));
 }
 
 
 std::string
-GUISUMOAbstractView::makeSnapshot(const std::string& destFile, const int width, const int height) {
-    if (width >= 0) {
-        resize(width, height);
+GUISUMOAbstractView::makeSnapshot(const std::string& destFile, const int w, const int h) {
+    if (w >= 0) {
+        resize(w, h);
         repaint();
     }
     std::string errorMessage;
@@ -1152,12 +1218,7 @@ GUISUMOAbstractView::makeSnapshot(const std::string& destFile, const int width, 
             glEnable(GL_POLYGON_OFFSET_LINE);
             myGrid->Search(minB, maxB, *myVisualizationSettings);
 
-            if (myVisualizationSettings->showSizeLegend) {
-                displayLegend();
-            }
-            if (myVisualizationSettings->showColorLegend) {
-                displayColorLegend();
-            }
+            displayLegends();
             state = gl2psEndPage();
             glFinish();
         }
@@ -1168,12 +1229,7 @@ GUISUMOAbstractView::makeSnapshot(const std::string& destFile, const int width, 
 #endif
     } else {
         doPaintGL(GL_RENDER, myChanger->getViewport());
-        if (myVisualizationSettings->showSizeLegend) {
-            displayLegend();
-        }
-        if (myVisualizationSettings->showColorLegend) {
-            displayColorLegend();
-        }
+        displayLegends();
         swapBuffers();
         glFinish();
         FXColor* buf;
@@ -1352,9 +1408,9 @@ GUISUMOAbstractView::setColorScheme(const std::string&) {
 }
 
 
-GUIVisualizationSettings*
+GUIVisualizationSettings&
 GUISUMOAbstractView::getVisualisationSettings() const {
-    return myVisualizationSettings;
+    return *myVisualizationSettings;
 }
 
 
@@ -1472,7 +1528,6 @@ GUISUMOAbstractView::checkGDALImage(Decal& d) {
         } else if (poBand->GetColorInterpretation() == GCI_AlphaBand) {
             shift = 3;
         } else {
-            WRITE_MESSAGE("Unknown color band in " + d.filename + ", maybe fox can parse it.");
             valid = false;
             break;
         }
@@ -1541,7 +1596,7 @@ GUISUMOAbstractView::drawDecals() {
 
 // ------------ Additional visualisations
 bool
-GUISUMOAbstractView::addAdditionalGLVisualisation(const GUIGlObject* const which) {
+GUISUMOAbstractView::addAdditionalGLVisualisation(GUIGlObject* const which) {
     if (myAdditionallyDrawn.find(which) == myAdditionallyDrawn.end()) {
         myAdditionallyDrawn[which] = 1;
     } else {
@@ -1553,7 +1608,7 @@ GUISUMOAbstractView::addAdditionalGLVisualisation(const GUIGlObject* const which
 
 
 bool
-GUISUMOAbstractView::removeAdditionalGLVisualisation(const GUIGlObject* const which) {
+GUISUMOAbstractView::removeAdditionalGLVisualisation(GUIGlObject* const which) {
     if (myAdditionallyDrawn.find(which) == myAdditionallyDrawn.end()) {
         return false;
     }

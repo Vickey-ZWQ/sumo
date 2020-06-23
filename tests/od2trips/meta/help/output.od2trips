@@ -1,5 +1,5 @@
-Eclipse SUMO od2trips Version v1_1_0+0435-678c69824b
- Copyright (C) 2001-2019 German Aerospace Center (DLR) and others; https://sumo.dlr.de
+Eclipse SUMO od2trips Version v1_4_0+1029-d1b8be6105
+ Copyright (C) 2001-2020 German Aerospace Center (DLR) and others; https://sumo.dlr.de
 Importer of O/D-matrices for the microscopic, multi-modal traffic simulation
   SUMO.
 
@@ -55,7 +55,7 @@ Processing Options:
                                      not identical
   --vtype STR                      Defines the name of the vehicle type to use
   --prefix STR                     Defines the prefix for vehicle names
-  --timeline STR                   Uses STR as a timeline definition
+  --timeline STR[]                 Uses STR[] as a timeline definition
   --timeline.day-in-hours          Uses STR as a 24h-timeline definition
   --no-step-log                    Disable console output of current time step
 
@@ -77,6 +77,8 @@ Report Options:
   --xml-validation.net STR         Set schema validation scheme of SUMO network
                                      inputs ("never", "auto" or "always")
   -W, --no-warnings                Disables output of warnings
+  --aggregate-warnings INT         Aggregate warnings of the same type whenever
+                                     more than INT occur
   -l, --log FILE                   Writes all messages to FILE (implies
                                      verbose)
   --message-log FILE               Writes all non-error messages to FILE

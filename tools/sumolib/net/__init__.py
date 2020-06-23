@@ -1,10 +1,14 @@
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2008-2019 German Aerospace Center (DLR) and others.
-# This program and the accompanying materials
-# are made available under the terms of the Eclipse Public License v2.0
-# which accompanies this distribution, and is available at
-# http://www.eclipse.org/legal/epl-v20.html
-# SPDX-License-Identifier: EPL-2.0
+# Copyright (C) 2008-2020 German Aerospace Center (DLR) and others.
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# https://www.eclipse.org/legal/epl-2.0/
+# This Source Code may also be made available under the following Secondary
+# Licenses when the conditions for such availability set forth in the Eclipse
+# Public License 2.0 are satisfied: GNU General Public License, version 2
+# or later which is available at
+# https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+# SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 
 # @file    __init__.py
 # @author  Daniel Krajzewicz
@@ -14,7 +18,6 @@
 # @author  Jakob Erdmann
 # @author  Robert Hilbrich
 # @date    2008-03-27
-# @version $Id$
 
 """
 This file contains a content handler for parsing sumo network xml files.
@@ -89,12 +92,12 @@ class TLS:
 
 class Phase:
 
-    def __init__(self, duration, state, minDur=-1, maxDur=-1, next=[], name=""):
+    def __init__(self, duration, state, minDur=-1, maxDur=-1, next=None, name=""):
         self.duration = duration
         self.state = state
         self.minDur = minDur  # minimum duration (only for actuated tls)
         self.maxDur = maxDur  # maximum duration (only for actuated tls)
-        self.next = next
+        self.next = [] if next is None else next
         self.name = name
 
     def __repr__(self):
@@ -113,7 +116,7 @@ class TLSProgram:
         self._phases = []
         self._params = {}
 
-    def addPhase(self, state, duration, minDur=-1, maxDur=-1, next=[], name=""):
+    def addPhase(self, state, duration, minDur=-1, maxDur=-1, next=None, name=""):
         self._phases.append(Phase(duration, state, minDur, maxDur, next, name))
 
     def toXML(self, tlsID):
@@ -156,6 +159,7 @@ class Net:
         self._id2node = {}
         self._id2edge = {}
         self._crossings_and_walkingAreas = set()
+        self._macroConnectors = set()
         self._id2tls = {}
         self._nodes = []
         self._edges = []
@@ -200,11 +204,11 @@ class Net:
         if type is not None and node._type is None:
             node._type = type
 
-    def addEdge(self, id, fromID, toID, prio, function, name):
+    def addEdge(self, id, fromID, toID, prio, function, name, edgeType=''):
         if id not in self._id2edge:
             fromN = self.addNode(fromID)
             toN = self.addNode(toID)
-            e = edge.Edge(id, fromN, toN, prio, function, name)
+            e = edge.Edge(id, fromN, toN, prio, function, name, edgeType)
             self._edges.append(e)
             self._id2edge[id] = e
             if function:
@@ -235,6 +239,7 @@ class Net:
                     tllink, state, ''))
             except Exception:
                 pass
+        return conn
 
     def getEdges(self, withInternal=True):
         if not withInternal:
@@ -478,8 +483,24 @@ class Net:
                             for p in l.getShape3D()]
             e.rebuildShape()
 
-    def getShortestPath(self, fromEdge, toEdge, maxCost=1e400, vClass=None):
-        q = [(0, fromEdge.getID(), fromEdge, ())]
+    def getShortestPath(self, fromEdge, toEdge, maxCost=1e400, vClass=None, reversalPenalty=0):
+        """
+        Finds the shortest path from fromEdge to toEdge respecting vClass, using Dijkstra's algorithm.
+        It returns a pair of a tuple of edges and the cost. If no path is found the first element is None.
+        The cost for the returned path is equal to the sum of all edge lengths in the path,
+        including the internal connectors, if they are present in the network.
+        The path itself does not include internal edges except for the case
+        when the start or end edge are internal edges.
+        The search may be limited using the given threshold.
+        """
+        if self.hasInternal:
+            appendix = ()
+            appendixCost = 0.
+            while toEdge.getFunction() == "internal":
+                appendix = (toEdge,) + appendix
+                appendixCost += toEdge.getLength()
+                toEdge = list(toEdge.getIncoming().keys())[0]
+        q = [(fromEdge.getLength(), fromEdge.getID(), fromEdge, ())]
         seen = set()
         dist = {fromEdge: fromEdge.getLength()}
         while q:
@@ -489,12 +510,17 @@ class Net:
             seen.add(e1)
             path += (e1,)
             if e1 == toEdge:
+                if self.hasInternal:
+                    return path + appendix, cost + appendixCost
                 return path, cost
             if cost > maxCost:
                 return None, cost
             for e2, conn in e1.getAllowedOutgoing(vClass).items():
+                # print(cost, e1.getID(), e2.getID(), e2 in seen)
                 if e2 not in seen:
                     newCost = cost + e2.getLength()
+                    if e2 == e1.getBidi():
+                        newCost += reversalPenalty
                     if self.hasInternal:
                         minInternalCost = 1e400
                         for c in conn:
@@ -516,6 +542,7 @@ class NetReader(handler.ContentHandler):
         self._net = others.get('net', Net())
         self._currentEdge = None
         self._currentNode = None
+        self._currentConnection = None
         self._currentLane = None
         self._crossingID2edgeIDs = {}
         self._withPhases = others.get('withPrograms', False)
@@ -525,10 +552,12 @@ class NetReader(handler.ContentHandler):
         self._withConnections = others.get('withConnections', True)
         self._withFoes = others.get('withFoes', True)
         self._withPedestrianConnections = others.get('withPedestrianConnections', False)
+        self._withMacroConnectors = others.get('withMacroConnectors', False)
         self._withInternal = others.get('withInternal', self._withPedestrianConnections)
         if self._withPedestrianConnections and not self._withInternal:
             sys.stderr.write("Warning: Option withPedestrianConnections requires withInternal\n")
             self._withInternal = True
+        self._bidiEdgeIDs = {}
 
     def startElement(self, name, attrs):
         if name == 'location':
@@ -536,7 +565,9 @@ class NetReader(handler.ContentHandler):
                                   "origBoundary"], attrs["projParameter"])
         if name == 'edge':
             function = attrs.get('function', '')
-            if function == '' or self._withInternal:
+            if (function == ''
+                    or (self._withInternal and function in ['internal', 'crossing', 'walkingarea'])
+                    or (self._withMacroConnectors and function == 'connector')):
                 prio = -1
                 if 'priority' in attrs:
                     prio = int(attrs['priority'])
@@ -554,14 +585,19 @@ class NetReader(handler.ContentHandler):
                 if function == 'crossing':
                     self._crossingID2edgeIDs[edgeID] = attrs.get('crossingEdges').split(' ')
 
-                self._currentEdge = self._net.addEdge(edgeID, fromNodeID, toNodeID,
-                                                      prio, function, attrs.get('name', ''))
+                self._currentEdge = self._net.addEdge(edgeID, fromNodeID, toNodeID, prio, function,
+                                                      attrs.get('name', ''), attrs.get('type', ''))
 
-                self._currentEdge.setRawShape(
-                    convertShape(attrs.get('shape', '')))
+                self._currentEdge.setRawShape(convertShape(attrs.get('shape', '')))
+
+                bidi = attrs.get('bidi', '')
+                if bidi:
+                    self._bidiEdgeIDs[edgeID] = bidi
             else:
                 if function in ['crossing', 'walkingarea']:
                     self._net._crossings_and_walkingAreas.add(attrs['id'])
+                elif function == 'connector':
+                    self._net._macroConnectors.add(attrs['id'])
                 self._currentEdge = None
         if name == 'lane' and self._currentEdge is not None:
             self._currentLane = self._net.addLane(
@@ -620,8 +656,10 @@ class NetReader(handler.ContentHandler):
         if name == 'connection' and self._withConnections and (attrs['from'][0] != ":" or self._withInternal):
             fromEdgeID = attrs['from']
             toEdgeID = attrs['to']
-            if self._withPedestrianConnections or not (fromEdgeID in self._net._crossings_and_walkingAreas or
-                                                       toEdgeID in self._net._crossings_and_walkingAreas):
+            if ((self._withPedestrianConnections or not (fromEdgeID in self._net._crossings_and_walkingAreas or
+                                                         toEdgeID in self._net._crossings_and_walkingAreas))
+                and (self._withMacroConnectors or not (fromEdgeID in self._net._macroConnectors or toEdgeID in
+                                                       self._net._macroConnectors))):
                 fromEdge = self._net.getEdge(fromEdgeID)
                 toEdge = self._net.getEdge(toEdgeID)
                 fromLane = fromEdge.getLane(int(attrs['fromLane']))
@@ -639,7 +677,7 @@ class NetReader(handler.ContentHandler):
                 except KeyError:
                     viaLaneID = ''
 
-                self._net.addConnection(
+                self._currentConnection = self._net.addConnection(
                     fromEdge, toEdge, fromLane, toLane, attrs['dir'], tl,
                     tllink, attrs['state'], viaLaneID)
 
@@ -662,7 +700,7 @@ class NetReader(handler.ContentHandler):
                 attrs['state'], int(attrs['duration']),
                 int(attrs['minDur']) if 'minDur' in attrs else -1,
                 int(attrs['maxDur']) if 'maxDur' in attrs else -1,
-                map(int, attrs['next'].split()) if 'next' in attrs else [],
+                list(map(int, attrs['next'].split())) if 'next' in attrs else [],
                 attrs['name'] if 'name' in attrs else ""
             )
         if name == 'roundabout':
@@ -675,6 +713,8 @@ class NetReader(handler.ContentHandler):
                 self._currentEdge.setParam(attrs['key'], attrs['value'])
             elif self._currentNode is not None:
                 self._currentNode.setParam(attrs['key'], attrs['value'])
+            elif self._currentConnection is not None:
+                self._currentConnection.setParam(attrs['key'], attrs['value'])
             elif self._withPhases and self._currentProgram is not None:
                 self._currentProgram.setParam(attrs['key'], attrs['value'])
 
@@ -685,12 +725,17 @@ class NetReader(handler.ContentHandler):
             self._currentEdge = None
         if name == 'junction':
             self._currentNode = None
+        if name == 'connection':
+            self._currentConnection = None
         # 'row-logic' is deprecated!!!
         if name == 'ROWLogic' or name == 'row-logic':
             self._haveROWLogic = False
         # tl-logic is deprecated!!!
         if self._withPhases and (name == 'tlLogic' or name == 'tl-logic'):
             self._currentProgram = None
+        if name == 'net':
+            for edgeID, bidiID in self._bidiEdgeIDs.items():
+                self._net.getEdge(edgeID)._bidi = self._net.getEdge(bidiID)
 
     def endDocument(self):
         # set crossed edges of pedestrian crossings

@@ -1,27 +1,25 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSCFModel_W99.h
 /// @author  Jakob Erdmann
 /// @date    June 2019
-/// @version $Id$
 ///
 // The psycho-physical model of Wiedemann (10-Parameter version from 1999)
 // code adapted from https://github.com/glgh/w99-demo
 // (MIT License, Copyright (c) 2016 glgh)
 /****************************************************************************/
-#ifndef MSCFModel_W99_H
-#define MSCFModel_W99_H
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include "MSCFModel.h"
@@ -89,11 +87,13 @@ public:
     double interactionGap(const MSVehicle* const, double vL) const;
 
     /** @brief Returns the minimum gap to reserve if the leader is braking at maximum (>=0)
-      * @param[in] speed EGO's speed
-      * @param[in] leaderSpeed LEADER's speed
-      * @param[in] leaderMaxDecel LEADER's max. deceleration rate
-      */
-    double getSecureGap(const double speed, const double leaderSpeed, const double leaderMaxDecel) const;
+     * @param[in] veh The vehicle itself, for obtaining other values
+     * @param[in] pred The leader vehicle, for obtaining other values
+     * @param[in] speed EGO's speed
+     * @param[in] leaderSpeed LEADER's speed
+     * @param[in] leaderMaxDecel LEADER's max. deceleration rate
+     */
+    double getSecureGap(const MSVehicle* const veh, const MSVehicle* const pred, const double speed, const double leaderSpeed, const double leaderMaxDecel) const;
 
     /** @brief Returns the model's name
      * @return The model's name
@@ -121,7 +121,7 @@ public:
         FREE_FLOW,
     }
 
-private:
+    private:
     class VehicleVariables : public MSCFModel::VehicleVariables {
     public:
         VehicleVariables() : lastStatus(FREE_FLOW) {}
@@ -143,17 +143,16 @@ private:
     const double myCC5;   // Positive 'Following' Threshold - m/s
     const double myCC6;   // Speed Dependency of Oscillation - 10^-4 rad/s
     const double myCC7;   // Oscillation Acceleration - m/s^2
-    const double myCC8;   // Standstill Acceleration - m/s^2 
+    const double myCC8;   // Standstill Acceleration - m/s^2
     const double myCC9;   // Acceleration at 80km/h - m/s^2
     /// @}
 
 
     void computeThresholds(double speed, double predSpeed, double leaderAccel, double rndVal,
-            double& sdxc, double& sdxo, double& sdxv) const;
+                           double& sdxc, double& sdxo, double& sdxv) const;
 
 private:
     /// @brief Invalidated assignment operator
     MSCFModel_W99& operator=(const MSCFModel_W99& s);
 };
 
-#endif /* MSCFModel_W99_H */

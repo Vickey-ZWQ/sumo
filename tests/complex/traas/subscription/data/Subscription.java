@@ -1,23 +1,24 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2017-2019 German Aerospace Center (DLR) and others.
+// Copyright (C) 2017-2020 German Aerospace Center (DLR) and others.
 // TraaS module
 // Copyright (C) 2013-2017 Dresden University of Technology
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    Subscription.java
 /// @author  Jakob Erdmann
 /// @date    2019
-/// @version $Id$
 ///
 //
 /****************************************************************************/
-import java.util.Observer;
-import java.util.Observable;
 import it.polito.appeal.traci.SumoTraciConnection;
 import it.polito.appeal.traci.TraCIException;
 import de.tudresden.sumo.cmd.Simulation;
@@ -25,6 +26,8 @@ import de.tudresden.sumo.cmd.Vehicle;
 import de.tudresden.sumo.cmd.Inductionloop;
 import de.tudresden.sumo.cmd.Trafficlight;
 import de.tudresden.sumo.config.Constants;
+import de.tudresden.sumo.util.Observer;
+import de.tudresden.sumo.util.Observable;
 import de.tudresden.sumo.subscription.VariableSubscription;
 import de.tudresden.sumo.subscription.SubscribtionVariable;
 import de.tudresden.sumo.subscription.SubscriptionObject;
@@ -36,17 +39,21 @@ import de.tudresden.ws.container.SumoPosition2D;
 
 public class Subscription implements Observer {
 
-    static String sumo_bin = "sumo";
-    static String config_file = "data/config.sumocfg";
-    static double step_length = 1;
-
     static SumoTraciConnection conn = null;
 
     public static void main(String[] args) {
+        String sumo_bin = "sumo";
+        String config_file = "data/config.sumocfg";
+        double step_length = 1.0;
 
+        if (args.length > 0) {
+            sumo_bin = args[0];
+        }
+        if (args.length > 1) {
+            config_file = args[1];
+        }
 
         try {
-
             conn = new SumoTraciConnection(sumo_bin, config_file);
             conn.addOption("step-length", step_length + "");
             conn.addOption("start", "true"); //start sumo immediately
@@ -78,8 +85,7 @@ public class Subscription implements Observer {
 
     }
 
-    public void update(Observable arg0, Object arg1) {
-        SubscriptionObject so = (SubscriptionObject) arg1;
+    public void update(Observable arg0, SubscriptionObject so) {
         //System.out.println("Subscription id=" + so.id + " domain=" +  so.domain + " name=" + so.name + " var=" + so.variable + " status=" + so.status + " ret=" + so.return_type + " resp=" + so.response.getID());
 
         if (so.response == ResponseType.SIM_VARIABLE) {

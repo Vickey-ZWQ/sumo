@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on Thu Mar 14 15:50:20 2019 by Eclipse SUMO marouter Version v1_1_0+0435-678c69824b
+<!-- generated on Mon Mar 23 13:21:02 2020 by Eclipse SUMO marouter Version v1_5_0+0891-eebab722dd
 -->
 
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/marouterConfiguration.xsd">
@@ -52,7 +52,10 @@
         <weight-adaption value="0" type="FLOAT"/>
 
         <!-- Parameter key(s) defining source (and sink) taz -->
-        <taz-param value="" type="STR"/>
+        <taz-param value="" type="STR[]"/>
+
+        <!-- Initialize a TAZ for every junction to use attributes toJunction and fromJunction -->
+        <junction-taz value="false" type="BOOL"/>
 
     </input>
 
@@ -105,6 +108,9 @@
         <!-- Expand weights behind the simulation&apos;s end -->
         <weights.expand value="false" synonymes="expand-weights" type="BOOL"/>
 
+        <!-- Consider edge priorities in addition to travel times, weighted by factor -->
+        <weights.priority-factor value="0" type="FLOAT"/>
+
         <!-- Select among routing algorithms [&apos;dijkstra&apos;, &apos;astar&apos;, &apos;CH&apos;, &apos;CHWrapper&apos;] -->
         <routing-algorithm value="dijkstra" type="STR"/>
 
@@ -126,8 +132,8 @@
         <!-- Defines the prefix for vehicle flow names -->
         <prefix value="" type="STR"/>
 
-        <!-- Uses STR as a timeline definition -->
-        <timeline value="" type="STR"/>
+        <!-- Uses STR[] as a timeline definition -->
+        <timeline value="" type="STR[]"/>
 
         <!-- Uses STR as a 24h-timeline definition -->
         <timeline.day-in-hours value="false" type="BOOL"/>
@@ -239,6 +245,9 @@
 
         <!-- Disables output of warnings -->
         <no-warnings value="false" synonymes="W suppress-warnings" type="BOOL"/>
+
+        <!-- Aggregate warnings of the same type whenever more than INT occur -->
+        <aggregate-warnings value="-1" type="INT"/>
 
         <!-- Writes all messages to FILE (implies verbose) -->
         <log value="" synonymes="l log-file" type="FILE"/>

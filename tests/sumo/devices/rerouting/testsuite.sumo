@@ -7,6 +7,12 @@ routes_explicite_routes
 # whether the devices are properly assigned
 assignment
 
+# test attributes fromJunction toJunction and viaJunctions
+junctionTaz
+
+# tests for parallel simulation routing
+parallel
+
 # various tests for computing edge weights during routing
 weights
 
@@ -23,10 +29,10 @@ reroute_congestions
 stops
 
 # handle input errors
-errors
+invalid_adaptation_interval
 
-# parallel execution with faulty routes
-parallel_disconnected
+# handle input errors
+invalid_pre_period
 
 # faulty routes
 disconnected

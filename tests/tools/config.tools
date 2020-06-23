@@ -14,6 +14,7 @@ copy_test_path:input_trips.trips.xml
 copy_test_path:input_routes.rou.xml
 copy_test_path:input_routes2.rou.xml
 copy_test_path:input_flows.flows.xml
+copy_test_path:input_turns.xml
 copy_test_path:input_detectors.det.xml
 copy_test_path:tracefile.xml
 copy_test_path:tracefile.txt
@@ -49,6 +50,7 @@ copy_test_path:source.edg.xml
 copy_test_path:source.con.xml
 copy_test_path:source.tll.xml
 copy_test_path:source.xml
+copy_test_path:source.xml.gz
 copy_test_path:dest.net.xml
 copy_test_path:dest.nod.xml
 copy_test_path:dest.edg.xml
@@ -56,6 +58,8 @@ copy_test_path:dest.con.xml
 copy_test_path:dest.tll.xml
 copy_test_path:dest.xml
 copy_test_path:fcd.xml
+copy_test_path:fcd.xml.gz
+copy_test_path:fcd2.xml
 copy_test_path:data.txt
 copy_test_path:source.csv
 copy_test_path:osm.xml
@@ -68,6 +72,8 @@ copy_test_path:input_edgedata.xml
 copy_test_path:summary.xml
 copy_test_path:config.txt
 copy_test_path:input_sel.txt
+copy_test_path:matsim_plans.xml
+copy_test_path:input_data.xml
 
 [collate_file]
 detectors:e1.add.xml
@@ -77,6 +83,8 @@ meandata:edge-mean-data.add.xml
 meandata:lane-mean-data.add.xml
 connections:connections.con.xml
 turndefs:turn-defs.xml
+turns:turns.xml
+edgedata:edgedata.xml
 changednet:input_net.net.xml.chg
 edges:edges.edg.xml
 nodes:nodes.nod.xml
@@ -93,6 +101,7 @@ pois:pois.add.xml
 trips:trips.trips.xml
 flows:out.flows.xml
 routes:out.rou.xml
+tripinfos:tripinfo_004.xml
 additional:out.add.xml
 diff_nod:diff.nod.xml
 diff_edg:diff.edg.xml
@@ -107,7 +116,9 @@ flt:test.flt
 str:test.str
 gpsdat:gpsdat.txt
 gpx:output.gpx
+kml:output.kml
 match:match.txt
+dualog:dua.log
 image:image.svg
 csv:out*.csv
 csv:1.csv
@@ -155,11 +166,19 @@ output:Warning: Module 'rtree' not available. Using brute-force fallback
 output:2147483647{REPLACE 9223372036854775807}
 output:Simulation.*started with{REPLACE Simulation started with}
 output:Retrying in
+output:00000 *${REPLACE 00000}
+dualog:uration:.*ms
+dualog:Real time factor
+dualog:UPS
+dualog:(.*ms)
+dualog:Simulation.*started with{REPLACE Simulation started with}
+dualog:.*'-c', 'iteration{REPLACE '-c', 'iteration}
 trips:<!-- generated on{[->]}-->
 osmtrips:<!-- generated on{[->]}-->
 districts:<!-- generated on{[->]}-->
 pois:<!--
 routes:<!-- generated on{[->]}-->
+xml:<!-- generated on{[->]}-->
 errors:Execution of .*duarouter.*'{REPLACE Execution of <path-to>duarouter'}
 errors:Leaked object at 
 errors:*** 9 leaks found
@@ -174,10 +193,14 @@ errors:Ran [0-9]+ tests in [0-9]+\.[0-9]+s{REPLACE Ran <COUNT> tests in <TIME>}
 errors:No imaging
 errors:Bytes: 0xF6 0x74 0x2E 0x6E, line 3, column 27{REPLACE Bytes: 0xF6 0x74 0x2E 0x6E, line 3, column 26}
 errors:column ([0-9]*) \(line [0-9]*\){REPLACE column \1}
+errors:Scipy version [0-9]+\.[0-9]+\.[0-9]+{REPLACE Scipy}
 omnet:<!-- generated on
 shawn:<!-- generated on
 flows:<!-- generated on{[->]}-->
+turns:<!-- generated on{[->]}-->
+edgedata:<!-- generated on{[->]}-->
 net:<!--{[->]}-->
+tripinfos:<!--{[->]}-->
 additional:<!--{[->]}-->
 osmimport:<!--{[->]}-->
 osmstops:<!--{[->]}-->
@@ -191,17 +214,25 @@ osmbatch:#!/bin/bash
 image:id="[^"]*"{REPLACE id="ReplacedTransientID"}
 image:url\(.*\){REPLACE url(ReplacedTransientURL)}
 image:href="[^"]*"{REPLACE href="ReplacedTransientHREF"}
+image:http:{REPLACE https:}
+image-600:http:{REPLACE https:}
+image-800:http:{REPLACE https:}
 csv:\r$
 
 [floating_point_tolerance]
 net:0.0101
-image:0.001
+image:1.001
+image-600:1.001
+image-800:1.001
 osmbatch:0.001
 osmlines:0.0101
 osmstops:0.0101
 osmtrips:0.0101
 ptroutes:0.0101
 summary:0.0001
+routes:0.0001
+output:0.0001
+csv:0.0101
 
 [unordered_text]
 errors:ERROR:SCHEMA

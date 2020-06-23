@@ -1,26 +1,23 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GNEVehicleTypeDialog.h
 /// @author  Pablo Alvarez Lopez
 /// @date    Jan 2019
-/// @version $Id$
 ///
 // Dialog for edit vehicleTypes
 /****************************************************************************/
-#ifndef GNEVehicleTypeDialog_h
-#define GNEVehicleTypeDialog_h
-
-// ===========================================================================
-// included modules
-// ===========================================================================
-
+#pragma once
 #include <config.h>
 
 #include <utils/common/SUMOVehicleClass.h>
@@ -64,9 +61,9 @@ public:
             /// @brief update values
             SUMOVehicleClass updateValue();
 
-        protected:
-            /// @brief set VClass texture
-            void setVClassLabelImage();
+        private:
+            /// @brief pointer to VTypeAtributes parent
+            VTypeAtributes* myVTypeAtributesParent;
 
             /// @brief FXComboBox for VClass
             FXComboBox* myComboBoxVClass;
@@ -74,9 +71,8 @@ public:
             /// @brief label with image of VClass
             FXLabel* myComboBoxVClassLabelImage;
 
-        private:
-            /// @brief pointer to VTypeAtributes parent
-            VTypeAtributes* myVTypeAtributesParent;
+            /// @brief set VClass texture
+            void setVClassLabelImage();
         };
 
         /// @brief class for VShapeRow
@@ -92,9 +88,9 @@ public:
             /// @brief update values
             void updateValues();
 
-        protected:
-            /// @brief set VShape texture
-            void setVShapeLabelImage();
+        private:
+            /// @brief pointer to VTypeAtributes parent
+            VTypeAtributes* myVTypeAtributesParent;
 
             /// @brief FXComboBox for Shape
             FXComboBox* myComboBoxShape;
@@ -102,42 +98,71 @@ public:
             /// @brief label with image of Shape
             FXLabel* myComboBoxShapeLabelImage;
 
-        private:
-            /// @brief pointer to VTypeAtributes parent
-            VTypeAtributes* myVTypeAtributesParent;
+            /// @brief set VShape texture
+            void setVShapeLabelImage();
+
         };
 
         /// @brief class used for represent rows with Vehicle Type parameters
-        class VTypeAttributeRow : protected FXHorizontalFrame {
+        class VTypeAttributeRow : private FXHorizontalFrame {
         public:
-            /// @brief constructor fox TextFields (type: 0 -> int, 1 -> float, other: string)
-            VTypeAttributeRow(VTypeAtributes* VTypeAtributesParent, FXVerticalFrame* verticalFrame, SumoXMLAttr attr, int type);
 
-            /// @brief constructor for comboBox
-            VTypeAttributeRow(VTypeAtributes* VTypeAtributesParent, FXVerticalFrame* verticalFrame, SumoXMLAttr attr, const std::vector<std::string>& values);
+            /// @brief Attribute type
+            enum RowAttrType {
+                ROWTYPE_STRING,
+                ROWTYPE_COLOR,
+                ROWTYPE_FILENAME,
+                ROWTYPE_COMBOBOX
+            };
 
-            /// @brief set Variablen in VehicleType
+            /// @brief constructor
+            VTypeAttributeRow(VTypeAtributes* VTypeAtributesParent, FXVerticalFrame* verticalFrame, const SumoXMLAttr attr, const RowAttrType rowAttrType, const std::vector<std::string>& values = {});
+
+            /// @brief set Variablen in VehicleType (using default value obtained from GNEAttributeCarrier)
             void setVariable();
 
-            void setVariable(const std::string &defaultValue);
+            /// @brief set Variablen in VehicleType (Specifying default value)
+            void setVariable(const std::string& defaultValue);
 
-            /// @brief update value of Vehicle Type
+            /// @brief update value of Vehicle Type (using default value obtained from GNEAttributeCarrier)
             void updateValue();
 
-            void updateValue(const std::string &defaultValue);
+            /// @brief update value of Vehicle Type (Specifying default value)
+            void updateValue(const std::string& defaultValue);
+
+            /// @brief get button
+            const FXButton* getButton() const;
+
+            /// @brief open color dialog
+            void openColorDialog();
+
+            /// @brief open image file dialog
+            void openImageFileDialog();
+
+            /// @brief open OSG file dialog
+            void openOSGFileDialog();
 
         private:
             /// @brief pointer to VTypeAttributeParameters parent
             VTypeAtributes* myVTypeAtributesParent;
 
             /// @brief edited attribute
-            SumoXMLAttr myAttr;
+            const SumoXMLAttr myAttr;
+
+            /// @brief RowAttrType
+            const RowAttrType myRowAttrType;
+
+            /// @brief button
+            FXButton* myButton;
 
             /// @brief text field
             FXTextField* myTextField;
 
             /// @brief ComboBox for attributes with limited values
             FXComboBox* myComboBox;
+
+            /// @brief filter attribute name
+            FXString filterAttributeName(const SumoXMLAttr attr) const;
         };
 
         /// @brief constructor
@@ -155,21 +180,24 @@ public:
         /// @brief build JunctionModel attributes (B)
         void buildJunctionModelAttributesB(FXVerticalFrame* column);
 
+        /// @brief build LaneChangeModel attributes
+        void buildLaneChangeModelAttributes(FXVerticalFrame* column);
+
         /// @brief update values
         void updateValues();
 
         /// @name FOX-callbacks
         /// @{
         /// @event called after change a Vehicle Type parameter
-        long onCmdSetVariable(FXObject*, FXSelector, void*);
+        long onCmdSetAttribute(FXObject*, FXSelector, void*);
 
-        /// @event called after change a Vehicle Type color
-        long onCmdSetColor(FXObject*, FXSelector, void*);
+        /// @event called after press a button dialog
+        long onCmdSetAttributeDialog(FXObject* obj, FXSelector, void*);
+
         /// @}
 
     protected:
-        /// @brief fox need this
-        VTypeAtributes() {}
+        FOX_CONSTRUCTOR(VTypeAtributes)
 
         /// @brief FXTextfield for vehicleTypeID
         FXTextField* myTextFieldVehicleTypeID;
@@ -180,11 +208,8 @@ public:
         /// @brief vehicle class row
         VClassRow* myVClassRow;
 
-        /// @brief FXButton for Color
-        FXButton* myButtonColor;
-
-        /// @brief FXTextField for Color
-        FXTextField* myTextFieldColor;
+        /// @brief VTypeAttributeRow for color
+        VTypeAttributeRow* myColor;
 
         /// @brief VTypeAttributeRow for Length
         VTypeAttributeRow* myLength;
@@ -252,11 +277,8 @@ public:
         /// @brief VTypeAttributeRow for MaxSpeedLat
         VTypeAttributeRow* myMaxSpeedLat;
 
-        /// @brief VTypeAttributeRow for ActionStepLenght
-        VTypeAttributeRow* myActionStepLenght;
-
-        /// @brief VTypeAttributeRow for HasDriveState
-        VTypeAttributeRow* myHasDriveState;
+        /// @brief VTypeAttributeRow for ActionStepLength
+        VTypeAttributeRow* myActionStepLength;
 
         /// @brief VTypeAttributeRow for Probability
         VTypeAttributeRow* myProbability;
@@ -271,10 +293,10 @@ public:
 
         /// @brief VTypeAttributeRow for Ignore Keep Clear Time
         VTypeAttributeRow* myJMIgnoreKeepclearTime;
-        
+
         /// @brief VTypeAttributeRow for Drive After Yellow Time
         VTypeAttributeRow* myJMDriveAfterYellowTime;
-        
+
         /// @brief VTypeAttributeRow for Drive After Red Time
         VTypeAttributeRow* myJMDriveAfterRedTime;
 
@@ -295,6 +317,69 @@ public:
 
         /// @brief VTypeAttributeRow for Impatience
         VTypeAttributeRow* myJMImpatience;
+
+        /// @}
+
+
+        /// @name LCM Attributes
+        /// @{
+
+        /// @brief VTypeAttributeRow for strategic param
+        VTypeAttributeRow* myLCAStrategicParam;
+
+        /// @brief VTypeAttributeRow for cooperative param
+        VTypeAttributeRow* myLCACooperativeParam;
+
+        /// @brief VTypeAttributeRow for speed gain param
+        VTypeAttributeRow* myLCASpeedgainParam;
+
+        /// @brief VTypeAttributeRow for keep right param
+        VTypeAttributeRow* myLCAKeeprightParam;
+
+        /// @brief VTypeAttributeRow for sublane param
+        VTypeAttributeRow* myLCASublaneParam;
+
+        /// @brief VTypeAttributeRow for opposite param
+        VTypeAttributeRow* myLCAOppositeParam;
+
+        /// @brief VTypeAttributeRow for pushy
+        VTypeAttributeRow* myLCAPushy;
+
+        /// @brief VTypeAttributeRow for pushy gap
+        VTypeAttributeRow* myLCAPushygap;
+
+        /// @brief VTypeAttributeRow for assertive
+        VTypeAttributeRow* myLCAAssertive;
+
+        /// @brief VTypeAttributeRow for impatience
+        VTypeAttributeRow* myLCAImpatience;
+
+        /// @brief VTypeAttributeRow for time to impatience
+        VTypeAttributeRow* myLCATimeToImpatience;
+
+        /// @brief VTypeAttributeRow for accel lat
+        VTypeAttributeRow* myLCAAccelLat;
+
+        /// @brief VTypeAttributeRow for loock ahead left
+        VTypeAttributeRow* myLCALookAheadLeft;
+
+        /// @brief VTypeAttributeRow for speed gain right
+        VTypeAttributeRow* myLCASpeedGainRight;
+
+        /// @brief VTypeAttributeRow for max speed lat standing
+        VTypeAttributeRow* myLCAMaxSpeedLatStanding;
+
+        /// @brief VTypeAttributeRow for max speed lat factor
+        VTypeAttributeRow* myLCAMaxSpeedLatFactor;
+
+        /// @brief VTypeAttributeRow for turn alignment distance
+        VTypeAttributeRow* myLCATurnAlignmentDistance;
+
+        /// @brief VTypeAttributeRow for overtake right
+        VTypeAttributeRow* myLCAOvertakeRight;
+
+        /// @brief VTypeAttributeRow for experimental
+        /* VTypeAttributeRow* myLCAExperimental; */
 
         /// @}
 
@@ -325,8 +410,7 @@ public:
         /// @}
 
     protected:
-        /// @brief fox need this
-        CarFollowingModelParameters() {}
+        FOX_CONSTRUCTOR(CarFollowingModelParameters)
 
         /// @brief class used for represent rows with Car Following Model parameters
         class CarFollowingModelRow : public FXHorizontalFrame {
@@ -348,10 +432,7 @@ public:
             SumoXMLAttr myAttr;
 
             /// @brief text field
-            FXTextField* textField;
-
-            /// @label Label with the Row attribute
-            FXLabel* myLabel;
+            FXTextField* myTextField;
         };
 
     private:
@@ -481,4 +562,3 @@ private:
     GNEVehicleTypeDialog& operator=(const GNEVehicleTypeDialog&) = delete;
 };
 
-#endif

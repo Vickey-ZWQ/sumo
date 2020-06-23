@@ -43,6 +43,9 @@ sorted
 # output with route length
 route_length
 
+# record generic vehicle parameters
+params
+
 # write vehroutes for vehicles which have not arrived at simulation end
 write_unfinished
 
@@ -57,6 +60,9 @@ write_unfinished_person
 
 # output of stops
 with_stops
+
+# output of stops
+with_stops_priorEdges
 
 # one vehicle with route distribution in input
 route_dist

@@ -1,24 +1,22 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MEVehicle.cpp
 /// @author  Daniel Krajzewicz
 /// @date    Tue, May 2005
-/// @version $Id$
 ///
 // A vehicle from the mesoscopic point of view
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <iostream>
@@ -26,7 +24,6 @@
 #include <utils/common/StdDefs.h>
 #include <utils/common/FileHelpers.h>
 #include <utils/common/MsgHandler.h>
-#include <utils/iodevices/BinaryInputDevice.h>
 #include <utils/iodevices/OutputDevice.h>
 #include <utils/xml/SUMOSAXAttributes.h>
 #include <microsim/devices/MSDevice_Vehroutes.h>
@@ -38,7 +35,7 @@
 #include <microsim/MSVehicleType.h>
 #include <microsim/MSLink.h>
 #include <microsim/MSVehicleControl.h>
-#include <microsim/MSTransportableControl.h>
+#include <microsim/transportables/MSTransportableControl.h>
 #include <microsim/devices/MSDevice.h>
 #include "MELoop.h"
 #include "MEVehicle.h"
@@ -55,12 +52,13 @@ MEVehicle::MEVehicle(SUMOVehicleParameter* pars, const MSRoute* route,
     myQueIndex(0),
     myEventTime(SUMOTime_MIN),
     myLastEntryTime(SUMOTime_MIN),
-    myBlockTime(SUMOTime_MAX) {
+    myBlockTime(SUMOTime_MAX),
+    myInfluencer(nullptr) {
     if (!(*myCurrEdge)->isTazConnector()) {
         if ((*myCurrEdge)->allowedLanes(type->getVehicleClass()) == nullptr) {
             throw ProcessError("Vehicle '" + pars->id + "' is not allowed to depart on any lane of its first edge.");
         }
-        if (pars->departSpeedProcedure == DEPART_SPEED_GIVEN && pars->departSpeed > type->getMaxSpeed()) {
+        if (pars->departSpeedProcedure == DepartSpeedDefinition::GIVEN && pars->departSpeed > type->getMaxSpeed()) {
             throw ProcessError("Departure speed for vehicle '" + pars->id +
                                "' is too high for the vehicle type '" + type->getID() + "'.");
         }
@@ -153,6 +151,7 @@ MEVehicle::moveRoutePointer() {
 }
 
 
+
 bool
 MEVehicle::hasArrived() const {
     // mySegment may be 0 due to teleporting or arrival
@@ -167,6 +166,10 @@ MEVehicle::isOnRoad() const {
     return getSegment() != nullptr;
 }
 
+bool
+MEVehicle::isIdling() const {
+    return false;
+}
 
 bool
 MEVehicle::isParking() const {
@@ -231,6 +234,9 @@ MEVehicle::addStop(const SUMOVehicleParameter::Stop& stopPar, std::string& /*err
     if (segmentStops.back().until >= 0) {
         segmentStops.back().until += untilOffset;
     }
+    if (segmentStops.back().arrival >= 0) {
+        segmentStops.back().arrival += untilOffset;
+    }
     if (myStopEdges.empty() || myStopEdges.back() != edge || cyclicRoute) {
         myStopEdges.push_back(edge);
     }
@@ -251,8 +257,7 @@ MEVehicle::isStoppedTriggered() const {
 
 
 bool
-MEVehicle::isStoppedInRange(double pos) const {
-    UNUSED_PARAMETER(pos);
+MEVehicle::isStoppedInRange(const double /* pos */, const double /* tolerance */) const {
     return isStopped();
 }
 
@@ -317,19 +322,16 @@ MEVehicle::processStop() {
             break;
         }
         lastPos = stop.endPos;
-        //SUMOTime started = MSNet::getInstance()->getCurrentTimeStep() - TIME2STEPS(getCurrentStoppingTimeSeconds());
-        SUMOTime started = myLastEntryTime;
-        //std::cout << SIMTIME << " veh=" << getID() << " lastEntry=" << STEPS2TIME(myLastEntryTime) << " stopStarted=" << STEPS2TIME(started) << "\n";
         if (MSStopOut::active()) {
-            MSStopOut::getInstance()->stopStarted(this, getPersonNumber(), getContainerNumber(), started);
+            MSStopOut::getInstance()->stopStarted(this, getPersonNumber(), getContainerNumber(), myLastEntryTime);
         }
         MSNet* const net = MSNet::getInstance();
-        SUMOTime dummyDuration; // boarding- and loading-time are not considered
+        SUMOTime dummy = -1; // boarding- and loading-time are not considered
         if (net->hasPersons()) {
-            net->getPersonControl().boardAnyWaiting(edge, this, stop, started, dummyDuration);
+            net->getPersonControl().boardAnyWaiting(edge, this, stop, dummy, dummy);
         }
         if (net->hasContainers()) {
-            net->getContainerControl().loadAnyWaiting(edge, this, stop, started, dummyDuration);
+            net->getContainerControl().loadAnyWaiting(edge, this, stop, dummy, dummy);
         }
         MSDevice_Vehroutes* vehroutes = static_cast<MSDevice_Vehroutes*>(getDevice(typeid(MSDevice_Vehroutes)));
         if (vehroutes != nullptr) {
@@ -340,7 +342,7 @@ MEVehicle::processStop() {
         }
         it = stops.erase(it);
     }
-    MSNet::getInstance()->getVehicleControl().removeWaiting(&mySegment->getEdge(), this);
+    mySegment->getEdge().removeWaiting(this);
     // clean up stops
     if (stops.size() == 0) {
         myStops.erase(segStopsIt);
@@ -419,6 +421,9 @@ MEVehicle::updateDetectors(SUMOTime currentTime, const bool isLeave, const MSMov
             }
 #endif
             ++rem;
+            if (reason == MSMoveReminder::NOTIFICATION_JUNCTION || reason == MSMoveReminder::NOTIFICATION_TELEPORT) {
+                myOdometer += getEdge()->getLength();
+            }
         } else {
 #ifdef _DEBUG
             if (myTraceMoveReminders) {
@@ -431,8 +436,33 @@ MEVehicle::updateDetectors(SUMOTime currentTime, const bool isLeave, const MSMov
 }
 
 
+MEVehicle::BaseInfluencer&
+MEVehicle::getBaseInfluencer() {
+    if (myInfluencer == nullptr) {
+        myInfluencer = new BaseInfluencer();
+    }
+    return *myInfluencer;
+}
+
+
+const MEVehicle::BaseInfluencer*
+MEVehicle::getBaseInfluencer() const {
+    return myInfluencer;
+}
+
+
+void
+MEVehicle::onRemovalFromNet(const MSMoveReminder::Notification reason) {
+    MSGlobals::gMesoNet->removeLeaderCar(this);
+    MSGlobals::gMesoNet->changeSegment(this, MSNet::getInstance()->getCurrentTimeStep(), nullptr, reason);
+}
+
 void
 MEVehicle::saveState(OutputDevice& out) {
+    if (mySegment != nullptr && MESegment::isInvalid(mySegment)) {
+        // segment is vaporization target, do not write this vehicle
+        return;
+    }
     MSBaseVehicle::saveState(out);
     assert(mySegment == 0 || *myCurrEdge == &mySegment->getEdge());
     std::vector<SUMOTime> internals;
@@ -503,4 +533,3 @@ MEVehicle::loadState(const SUMOSAXAttributes& attrs, const SUMOTime offset) {
 
 
 /****************************************************************************/
-

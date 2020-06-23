@@ -1,17 +1,20 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2016-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2016-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    SimulationControlUnits.java
 /// @author  Maximiliano Bottazzi
 /// @author  Jakob Erdmann
 /// @date    2016
-/// @version $Id$
 ///
 //
 /****************************************************************************/
@@ -107,19 +110,24 @@ public class SimulationControlUnits {
         complexCodes.put("rGO", LightColor.RED);
         complexCodes.put("rOO", LightColor.RED);
         complexCodes.put("roO", LightColor.RED);
+        complexCodes.put("ryo", LightColor.RED);
+        complexCodes.put("ryO", LightColor.RED);
+        complexCodes.put("ruO", LightColor.RED);
+        complexCodes.put("ruo", LightColor.RED);
+        complexCodes.put("yGO", LightColor.YELLOW);
         complexCodes.put("yOO", LightColor.YELLOW);
         complexCodes.put("yyo", LightColor.YELLOW);
         complexCodes.put("yyO", LightColor.YELLOW);
-        complexCodes.put("yoO", LightColor.OFF);
+        complexCodes.put("yoO", LightColor.YELLOW);
         complexCodes.put("uOO", LightColor.RED_YELLOW);
         complexCodes.put("uoO", LightColor.RED_YELLOW);
-        complexCodes.put("ruO", LightColor.RED_YELLOW);
-        complexCodes.put("ruo", LightColor.RED_YELLOW);
         complexCodes.put("OGo", LightColor.DARK_GREEN);
         complexCodes.put("GoO", LightColor.DARK_GREEN);
         complexCodes.put("goO", LightColor.DARK_GREEN);
         complexCodes.put("GoG", LightColor.GREEN);
         complexCodes.put("GOG", LightColor.GREEN);
+        complexCodes.put("OGO", LightColor.GREEN);
+
 
 
         // this is a hack for halle_vital.net intersection A

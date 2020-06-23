@@ -1,39 +1,27 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GNEChange_Additional.h
 /// @author  Pablo Alvarez Lopez
 /// @date    Nov 2015
-/// @version $Id$
 ///
 // A network change in which a additional element is created or deleted
 /****************************************************************************/
-#ifndef GNEChange_Additional_h
-#define GNEChange_Additional_h
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include "GNEChange.h"
 
-// ===========================================================================
-// class declarations
-// ===========================================================================
-
-class GNEViewNet;
-class GNEEdge;
-class GNELane;
-class GNEShape;
-class GNEAdditional;
-class GNEDemandElement;
 
 // ===========================================================================
 // class definitions
@@ -75,37 +63,4 @@ private:
      * @note we assume shared responsibility for the pointer (via reference counting)
      */
     GNEAdditional* myAdditional;
-
-    /// @brief reference to vector of edge parents
-    const std::vector<GNEEdge*>& myEdgeParents;
-
-    /// @brief reference to vector of lane parents
-    const std::vector<GNELane*>& myLaneParents;
-
-    /// @brief reference to vector of shape parents
-    const std::vector<GNEShape*>& myShapeParents;
-
-    /// @brief reference to vector of additional parents
-    const std::vector<GNEAdditional*>& myAdditionalParents;
-
-    /// @brief reference to vector of demand element parents
-    const std::vector<GNEDemandElement*>& myDemandElementParents;
-
-    /// @brief reference to vector of edge childs
-    const std::vector<GNEEdge*>& myEdgeChilds;
-
-    /// @brief reference to vector of lane childs
-    const std::vector<GNELane*>& myLaneChilds;
-
-    /// @brief reference to vector of shape childs
-    const std::vector<GNEShape*>& myShapeChilds;
-
-    /// @brief reference to vector of additional childs
-    const std::vector<GNEAdditional*>& myAdditionalChilds;
-
-    /// @brief reference to vector of demand element childs
-    const std::vector<GNEDemandElement*>& myDemandElementChilds;
 };
-
-#endif
-/****************************************************************************/

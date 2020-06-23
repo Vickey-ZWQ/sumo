@@ -7,6 +7,13 @@ half_equipped
 # Vehicle taking different chargingStations and busstops, every with a different configuration 
 chargingStations
 
+# leave the road while charging
+chargingStations_parked
+
+# usually loaded from vehicle parameter,
+# default taken from vType parameter
+actualBatteryCapacity
+
 # Vehicle taking different chargingStations and busstops, every with a different configuration with charging station output
 chargingStations_output
 
@@ -18,3 +25,6 @@ stoppingTreshold
 
 # test parameter for influencing recuperation by deceleration level
 recuperateByDecel
+
+# compare battery output with aggregated consumption
+tripinfo_emission

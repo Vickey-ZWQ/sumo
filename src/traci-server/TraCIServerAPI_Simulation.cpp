@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    TraCIServerAPI_Simulation.cpp
 /// @author  Daniel Krajzewicz
@@ -13,15 +17,9 @@
 /// @author  Michael Behrisch
 /// @author  Laura Bieker
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // APIs for getting/setting edge values via TraCI
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <utils/common/StdDefs.h>
@@ -95,6 +93,12 @@ TraCIServerAPI_Simulation::processGet(TraCIServer& server, tcpip::Storage& input
                 break;
             case libsumo::VAR_PARKING_STARTING_VEHICLES_IDS:
                 writeVehicleStateIDs(server, server.getWrapperStorage(), MSNet::VEHICLE_STATE_STARTING_PARKING);
+                break;
+            case libsumo::VAR_PARKING_MANEUVERING_VEHICLES_NUMBER:
+                writeVehicleStateNumber(server, server.getWrapperStorage(), MSNet::VEHICLE_STATE_MANEUVERING);
+                break;
+            case libsumo::VAR_PARKING_MANEUVERING_VEHICLES_IDS:
+                writeVehicleStateIDs(server, server.getWrapperStorage(), MSNet::VEHICLE_STATE_MANEUVERING);
                 break;
             case libsumo::VAR_PARKING_ENDING_VEHICLES_NUMBER:
                 writeVehicleStateNumber(server, server.getWrapperStorage(), MSNet::VEHICLE_STATE_ENDING_PARKING);
@@ -272,6 +276,19 @@ TraCIServerAPI_Simulation::processGet(TraCIServer& server, tcpip::Storage& input
                 server.getWrapperStorage().writeString(libsumo::Simulation::getParameter(id, paramName));
                 break;
             }
+            case libsumo::VAR_PARAMETER_WITH_KEY: {
+                std::string paramName = "";
+                if (!server.readTypeCheckingString(inputStorage, paramName)) {
+                    return server.writeErrorStatusCmd(libsumo::CMD_GET_SIM_VARIABLE, "Retrieval of a parameter requires its name.", outputStorage);
+                }
+                server.getWrapperStorage().writeUnsignedByte(libsumo::TYPE_COMPOUND);
+                server.getWrapperStorage().writeInt(2);  /// length
+                server.getWrapperStorage().writeUnsignedByte(libsumo::TYPE_STRING);
+                server.getWrapperStorage().writeString(paramName);
+                server.getWrapperStorage().writeUnsignedByte(libsumo::TYPE_STRING);
+                server.getWrapperStorage().writeString(libsumo::Simulation::getParameter(id, paramName));
+                break;
+            }
             default:
                 return server.writeErrorStatusCmd(libsumo::CMD_GET_SIM_VARIABLE, "Get Simulation Variable: unsupported variable " + toHex(variable, 2) + " specified", outputStorage);
         }
@@ -291,7 +308,10 @@ TraCIServerAPI_Simulation::processSet(TraCIServer& server, tcpip::Storage& input
     // variable
     int variable = inputStorage.readUnsignedByte();
     if (variable != libsumo::CMD_CLEAR_PENDING_VEHICLES
-            && variable != libsumo::CMD_SAVE_SIMSTATE) {
+            && variable != libsumo::CMD_SAVE_SIMSTATE
+            && variable != libsumo::CMD_LOAD_SIMSTATE
+            && variable != libsumo::CMD_MESSAGE
+       ) {
         return server.writeErrorStatusCmd(libsumo::CMD_SET_SIM_VARIABLE, "Set Simulation Variable: unsupported variable " + toHex(variable, 2) + " specified", outputStorage);
     }
     // id
@@ -315,6 +335,24 @@ TraCIServerAPI_Simulation::processSet(TraCIServer& server, tcpip::Storage& input
                     return server.writeErrorStatusCmd(libsumo::CMD_SET_SIM_VARIABLE, "A string is needed for saving simulation state.", outputStorage);
                 }
                 libsumo::Simulation::saveState(file);
+            }
+            break;
+            case libsumo::CMD_LOAD_SIMSTATE: {
+                //quick-load simulation state
+                std::string file;
+                if (!server.readTypeCheckingString(inputStorage, file)) {
+                    return server.writeErrorStatusCmd(libsumo::CMD_SET_SIM_VARIABLE, "A string is needed for loading simulation state.", outputStorage);
+                }
+                double time = libsumo::Simulation::loadState(file);
+                TraCIServer::getInstance()->setTargetTime(TIME2STEPS(time));
+            }
+            break;
+            case libsumo::CMD_MESSAGE: {
+                std::string msg;
+                if (!server.readTypeCheckingString(inputStorage, msg)) {
+                    return server.writeErrorStatusCmd(libsumo::CMD_SET_SIM_VARIABLE, "A string is needed for adding a log message.", outputStorage);
+                }
+                libsumo::Simulation::writeMessage(msg);
             }
             break;
             default:
@@ -378,7 +416,7 @@ TraCIServerAPI_Simulation::writeStage(tcpip::Storage& outputStorage, const libsu
 
 libsumo::TraCIStage*
 TraCIServerAPI_Simulation::readStage(TraCIServer& server, tcpip::Storage& inputStorage) {
-    auto * stage = new libsumo::TraCIStage();
+    auto* stage = new libsumo::TraCIStage();
     server.readTypeCheckingInt(inputStorage, stage->type);
     server.readTypeCheckingString(inputStorage, stage->vType);
     server.readTypeCheckingString(inputStorage, stage->line);
@@ -571,30 +609,11 @@ TraCIServerAPI_Simulation::commandDistanceRequest(TraCIServer& server, tcpip::St
     }
 
     // read distance type
-    int distType = inputStorage.readUnsignedByte();
+    const int distType = inputStorage.readUnsignedByte();
 
     double distance = 0.0;
     if (distType == libsumo::REQUEST_DRIVINGDIST) {
-        // compute driving distance
-        if ((roadPos1.first == roadPos2.first) && (roadPos1.second <= roadPos2.second)) {
-            // same edge
-            distance = roadPos2.second - roadPos1.second;
-        } else {
-            ConstMSEdgeVector newRoute;
-            while (roadPos2.first->isInternal() && roadPos2.first != roadPos1.first) {
-                distance += roadPos2.second;
-                roadPos2.first = roadPos2.first->getLogicalPredecessorLane();
-                roadPos2.second = roadPos2.first->getLength();
-            }
-            MSNet::getInstance()->getRouterTT().compute(
-                &roadPos1.first->getEdge(), &roadPos2.first->getEdge(), nullptr, MSNet::getInstance()->getCurrentTimeStep(), newRoute, true);
-            if (newRoute.size() == 0) {
-                distance = libsumo::INVALID_DOUBLE_VALUE;
-            } else {
-                MSRoute route("", newRoute, false, nullptr, std::vector<SUMOVehicleParameter::Stop>());
-                distance += route.getDistanceBetween(roadPos1.second, roadPos2.second, &roadPos1.first->getEdge(), &roadPos2.first->getEdge());
-            }
-        }
+        distance = libsumo::Helper::getDrivingDistance(roadPos1, roadPos2);
     } else {
         // compute air distance (default)
         distance = pos1.distanceTo(pos2);

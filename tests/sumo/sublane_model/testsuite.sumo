@@ -6,6 +6,9 @@ motorway
 # sublane behavior on junctions
 junction
 
+# tests for behavior at a 2-lane roundabout
+roundabout
+
 # vehicle behavior on a single edge with 2 lanes (default alignment)
 1edge_2lanes
 depart_random_last
@@ -18,6 +21,9 @@ depart_random_last
 
 # vehicle behavior on a single edge with cars and mopeds
 1edge_2lanes_compact_mixed
+
+# vehicle behavior on a single edge with cars and mopeds
+1edge_3lanes_mixed
 1edge_2lanes_compact_mixed_maxSpeedLatStanding
 
 # vehicle behavior on a single edge with cars and mopeds (all pushy)
@@ -47,6 +53,9 @@ future_braking
 
 # test usage of a rescue lane. see also #5783
 rescueLane
+
+# vehicle behavior on a single edge with cars and mopeds
+lane_discipline
 
 # tests for various tickets
 bugs

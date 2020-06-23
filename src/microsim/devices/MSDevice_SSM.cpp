@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2013-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2013-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSDevice_SSM.cpp
 /// @author  Daniel Krajzewicz
@@ -13,19 +17,15 @@
 /// @author  Jakob Erdmann
 /// @author  Leonhard Luecken
 /// @date    11.06.2013
-/// @version $Id$
 ///
 // An SSM-device logs encounters / conflicts of the carrying vehicle with other surrounding vehicles
 // XXX: Preliminary implementation. Use with care. Especially rerouting vehicles could be problematic.
 // TODO: implement SSM time-gap (estimated conflict entry and exit times are already calculated for PET calculation)
 /****************************************************************************/
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <iostream>
+#include <algorithm>
 #include <utils/common/StringTokenizer.h>
 #include <utils/geom/GeomHelper.h>
 #include <utils/common/StringUtils.h>
@@ -49,26 +49,23 @@
 //#define DEBUG_SSM
 //#define DEBUG_SSM_OPPOSITE
 //#define DEBUG_ENCOUNTER
-//#define DEBUG_SSM_SURROUNDING
+#define DEBUG_SSM_SURROUNDING
 //#define DEBUG_SSM_DRAC
 //#define DEBUG_SSM_NOTIFICATIONS
 //#define DEBUG_COND(ego) MSNet::getInstance()->getCurrentTimeStep() > 308000
-//#define DEBUG_COND(ego) ego!=nullptr && ego->isSelected()
-
+#define DEBUG_COND(ego) (ego!=nullptr && ego->isSelected())
+#define DEBUG_COND_FIND(ego) (ego.isSelected())
 #define DEBUG_EGO_ID "EW.3"
 #define DEBUG_FOE_ID "WE.0"
 
-#define DEBUG_COND(ego) ((ego)!=nullptr && (ego)->getID() == DEBUG_EGO_ID)
+//#define DEBUG_COND(ego) ((ego)!=nullptr && (ego)->getID() == DEBUG_EGO_ID)
 
-#define DEBUG_COND_ENCOUNTER(e) ((DEBUG_EGO_ID == std::string("") || e->egoID == DEBUG_EGO_ID) && (DEBUG_FOE_ID == std::string("") || e->foeID == DEBUG_FOE_ID))
+//#define DEBUG_COND_ENCOUNTER(e) ((DEBUG_EGO_ID == std::string("") || e->egoID == DEBUG_EGO_ID) && (DEBUG_FOE_ID == std::string("") || e->foeID == DEBUG_FOE_ID))
 //#define DEBUG_COND_ENCOUNTER(e) (e->ego != nullptr && e->ego->isSelected() && e->foe != nullptr && e->foe->isSelected())
 
 // ===========================================================================
 // Constants
 // ===========================================================================
-// value indicating an invalid double parameter
-#define INVALID std::numeric_limits<double>::max()
-
 // default value for the detection range of potential opponents
 #define DEFAULT_RANGE 50.0
 
@@ -176,27 +173,27 @@ std::ostream& operator<<(std::ostream& out, MSDevice_SSM::EncounterType type) {
 // static initialisation methods
 // ---------------------------------------------------------------------------
 
-std::set<MSDevice_SSM*>* MSDevice_SSM::instances = new std::set<MSDevice_SSM*>();
+std::set<MSDevice_SSM*, ComparatorNumericalIdLess>* MSDevice_SSM::myInstances = new std::set<MSDevice_SSM*, ComparatorNumericalIdLess>();
 
 std::set<std::string> MSDevice_SSM::createdOutputFiles;
 
 int MSDevice_SSM::issuedParameterWarnFlags = 0;
 
-const std::set<MSDevice_SSM*>&
+const std::set<MSDevice_SSM*, ComparatorNumericalIdLess>&
 MSDevice_SSM::getInstances() {
-    return *instances;
+    return *myInstances;
 }
 
 void
 MSDevice_SSM::cleanup() {
     // Close current encounters and flush conflicts to file for all existing devices
-    if (instances != nullptr) {
-        for (std::set<MSDevice_SSM*>::iterator ii = instances->begin(); ii != instances->end(); ++ii) {
-            (*ii)->resetEncounters();
-            (*ii)->flushConflicts(true);
-            (*ii)->flushGlobalMeasures();
+    if (myInstances != nullptr) {
+        for (MSDevice_SSM* device : *myInstances) {
+            device->resetEncounters();
+            device->flushConflicts(true);
+            device->flushGlobalMeasures();
         }
-        instances->clear();
+        myInstances->clear();
     }
     for (auto& fn : createdOutputFiles) {
         OutputDevice* file = &OutputDevice::getDevice(fn);
@@ -273,25 +270,29 @@ MSDevice_SSM::Encounter::Encounter(const MSVehicle* _ego, const MSVehicle* const
     egoID(_ego->getID()),
     foeID(_foe->getID()),
     begin(_begin),
-    end(-INVALID),
+    end(-INVALID_DOUBLE),
     currentType(ENCOUNTER_TYPE_NOCONFLICT_AHEAD),
     remainingExtraTime(extraTime),
-    egoConflictEntryTime(INVALID),
-    egoConflictExitTime(INVALID),
-    foeConflictEntryTime(INVALID),
-    foeConflictExitTime(INVALID),
-    minTTC(INVALID, Position::invalidPosition(), ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID),
-    maxDRAC(INVALID, Position::invalidPosition(), ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID),
-    PET(INVALID, Position::invalidPosition(), ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID),
+    egoConflictEntryTime(INVALID_DOUBLE),
+    egoConflictExitTime(INVALID_DOUBLE),
+    foeConflictEntryTime(INVALID_DOUBLE),
+    foeConflictExitTime(INVALID_DOUBLE),
+    minTTC(INVALID_DOUBLE, Position::INVALID, ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID_DOUBLE),
+    maxDRAC(INVALID_DOUBLE, Position::INVALID, ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID_DOUBLE),
+    PET(INVALID_DOUBLE, Position::INVALID, ENCOUNTER_TYPE_NOCONFLICT_AHEAD, INVALID_DOUBLE),
     closingRequested(false) {
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(this)) std::cout << "\n" << SIMTIME << " Constructing encounter of '" << ego->getID() << "' and '" << foe->getID() << "'" << std::endl;
+    if (DEBUG_COND_ENCOUNTER(this)) {
+        std::cout << "\n" << SIMTIME << " Constructing encounter of '" << ego->getID() << "' and '" << foe->getID() << "'" << std::endl;
+    }
 #endif
 }
 
 MSDevice_SSM::Encounter::~Encounter() {
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(this)) std::cout << "\n" << SIMTIME << " Destroying encounter of '" << egoID << "' and '" << foeID << "' (begin was " << begin << ")" << std::endl;
+    if (DEBUG_COND_ENCOUNTER(this)) {
+        std::cout << "\n" << SIMTIME << " Destroying encounter of '" << egoID << "' and '" << foeID << "' (begin was " << begin << ")" << std::endl;
+    }
 #endif
 }
 
@@ -302,11 +303,11 @@ MSDevice_SSM::Encounter::add(double time, const EncounterType type, Position ego
 #ifdef DEBUG_ENCOUNTER
     if (DEBUG_COND_ENCOUNTER(this))
         std::cout << time << " Adding data point for encounter of '" << egoID << "' and '" << foeID << "':\n"
-                  << "type=" << type << ", egoDistToConflict=" << (egoDistToConflict == INVALID ? "NA" : ::toString(egoDistToConflict))
-                  << ", foeDistToConflict=" << (foeDistToConflict == INVALID ? "NA" : ::toString(foeDistToConflict))
-                  << ",\nttc=" << (ttc == INVALID ? "NA" : ::toString(ttc))
-                  << ", drac=" << (drac == INVALID ? "NA" : ::toString(drac))
-                  << ", pet=" << (pet.second == INVALID ? "NA" : ::toString(pet.second))
+                  << "type=" << type << ", egoDistToConflict=" << (egoDistToConflict == INVALID_DOUBLE ? "NA" : ::toString(egoDistToConflict))
+                  << ", foeDistToConflict=" << (foeDistToConflict == INVALID_DOUBLE ? "NA" : ::toString(foeDistToConflict))
+                  << ",\nttc=" << (ttc == INVALID_DOUBLE ? "NA" : ::toString(ttc))
+                  << ", drac=" << (drac == INVALID_DOUBLE ? "NA" : ::toString(drac))
+                  << ", pet=" << (pet.second == INVALID_DOUBLE ? "NA" : ::toString(pet.second))
                   << std::endl;
 #endif
     currentType = type;
@@ -322,26 +323,26 @@ MSDevice_SSM::Encounter::add(double time, const EncounterType type, Position ego
     foeDistsToConflict.push_back(foeDistToConflict);
 
     TTCspan.push_back(ttc);
-    if (ttc != INVALID && (ttc < minTTC.value || minTTC.value == INVALID)) {
+    if (ttc != INVALID_DOUBLE && (ttc < minTTC.value || minTTC.value == INVALID_DOUBLE)) {
         minTTC.value = ttc;
         minTTC.time = time;
         minTTC.pos = conflictPoint;
-        minTTC.type = type;
+        minTTC.type = ttc <= 0 ? ENCOUNTER_TYPE_COLLISION :  type;
     }
 
     DRACspan.push_back(drac);
-    if (drac != INVALID && (drac > maxDRAC.value || maxDRAC.value == INVALID)) {
+    if (drac != INVALID_DOUBLE && (drac > maxDRAC.value || maxDRAC.value == INVALID_DOUBLE)) {
         maxDRAC.value = drac;
         maxDRAC.time = time;
         maxDRAC.pos = conflictPoint;
         maxDRAC.type = type;
     }
 
-    if (pet.first != INVALID && (PET.value >= pet.second || PET.value == INVALID)) {
+    if (pet.first != INVALID_DOUBLE && (PET.value >= pet.second || PET.value == INVALID_DOUBLE)) {
         PET.value = pet.second;
         PET.time = pet.first;
         PET.pos = conflictPoint;
-        PET.type = type;
+        PET.type = PET.value <= 0 ? ENCOUNTER_TYPE_COLLISION : type;
     }
 }
 
@@ -367,22 +368,22 @@ MSDevice_SSM::Encounter::getRemainingExtraTime() const {
 MSDevice_SSM::EncounterApproachInfo::EncounterApproachInfo(Encounter* e) :
     encounter(e),
     type(ENCOUNTER_TYPE_NOCONFLICT_AHEAD),
-    conflictPoint(Position::invalidPosition()),
-    egoConflictEntryDist(INVALID),
-    foeConflictEntryDist(INVALID),
-    egoConflictExitDist(INVALID),
-    foeConflictExitDist(INVALID),
-    egoEstimatedConflictEntryTime(INVALID),
-    foeEstimatedConflictEntryTime(INVALID),
-    egoEstimatedConflictExitTime(INVALID),
-    foeEstimatedConflictExitTime(INVALID),
-    egoConflictAreaLength(INVALID),
-    foeConflictAreaLength(INVALID),
+    conflictPoint(Position::INVALID),
+    egoConflictEntryDist(INVALID_DOUBLE),
+    foeConflictEntryDist(INVALID_DOUBLE),
+    egoConflictExitDist(INVALID_DOUBLE),
+    foeConflictExitDist(INVALID_DOUBLE),
+    egoEstimatedConflictEntryTime(INVALID_DOUBLE),
+    foeEstimatedConflictEntryTime(INVALID_DOUBLE),
+    egoEstimatedConflictExitTime(INVALID_DOUBLE),
+    foeEstimatedConflictExitTime(INVALID_DOUBLE),
+    egoConflictAreaLength(INVALID_DOUBLE),
+    foeConflictAreaLength(INVALID_DOUBLE),
     egoLeftConflict(false),
     foeLeftConflict(false),
-    ttc(INVALID),
-    drac(INVALID),
-    pet(std::make_pair(INVALID, INVALID)) {
+    ttc(INVALID_DOUBLE),
+    drac(INVALID_DOUBLE),
+    pet(std::make_pair(INVALID_DOUBLE, INVALID_DOUBLE)) {
 }
 
 
@@ -394,10 +395,10 @@ MSDevice_SSM::updateAndWriteOutput() {
         flushConflicts();
     } else {
 #ifdef DEBUG_SSM
-    if (DEBUG_COND(myHolderMS))
-        std::cout << "\n" << SIMTIME << " Device '" << getID() << "' updateAndWriteOutput()\n"
-                  << "  Holder is off-road! Calling resetEncounters()."
-                  << std::endl;
+        if (DEBUG_COND(myHolderMS))
+            std::cout << "\n" << SIMTIME << " Device '" << getID() << "' updateAndWriteOutput()\n"
+                      << "  Holder is off-road! Calling resetEncounters()."
+                      << std::endl;
 #endif
         resetEncounters();
         // Write out past conflicts
@@ -472,7 +473,7 @@ MSDevice_SSM::computeGlobalMeasures() {
 
         if (myComputeSGAP) {
             if (leader.first == nullptr) {
-                mySGAPspan.push_back(INVALID);
+                mySGAPspan.push_back(INVALID_DOUBLE);
             } else {
                 double sgap = leader.second + leader.first->getVehicleType().getMinGap();
                 mySGAPspan.push_back(sgap);
@@ -484,7 +485,7 @@ MSDevice_SSM::computeGlobalMeasures() {
 
         if (myComputeTGAP) {
             if (leader.first == nullptr || myHolderMS->getSpeed() == 0.) {
-                myTGAPspan.push_back(INVALID);
+                myTGAPspan.push_back(INVALID_DOUBLE);
             } else {
                 const double tgap = (leader.second + leader.first->getVehicleType().getMinGap()) / myHolderMS->getSpeed();
                 myTGAPspan.push_back(tgap);
@@ -514,7 +515,7 @@ MSDevice_SSM::createEncounters(FoeInfoMap& foes) {
     for (FoeInfoMap::const_iterator foe = foes.begin(); foe != foes.end(); ++foe) {
         Encounter* e = new Encounter(myHolderMS, foe->first, SIMTIME, myExtraTime);
         if (updateEncounter(e, foe->second)) {
-            if (myOldestActiveEncounterBegin == INVALID) {
+            if (myOldestActiveEncounterBegin == INVALID_DOUBLE) {
                 assert(myActiveEncounters.empty());
                 myOldestActiveEncounterBegin = e->begin;
             }
@@ -541,7 +542,7 @@ void
 MSDevice_SSM::processEncounters(FoeInfoMap& foes, bool forceClose) {
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS)) {
-        std::cout << "\n" << SIMTIME << " Device '" << getID() << "' processEncounters(forceClose = "<< forceClose <<")" << std::endl;
+        std::cout << "\n" << SIMTIME << " Device '" << getID() << "' processEncounters(forceClose = " << forceClose << ")" << std::endl;
         std::cout << "Currently present foes:\n";
         for (FoeInfoMap::const_iterator vi = foes.begin(); vi != foes.end(); ++vi) {
             std::cout << vi->first->getID() << "\n";
@@ -573,7 +574,9 @@ MSDevice_SSM::processEncounters(FoeInfoMap& foes, bool forceClose) {
                 // => Start new encounter (i.e. don't erase the foe, don't delete the foeInfo and request closing)
                 // Note that updateEncounter did not add another trajectory point in this case.
 #ifdef DEBUG_SSM
-                if (DEBUG_COND(myHolderMS))  std::cout << "  Requesting encounter closure because both left conflict area of previous encounter but another encounter lies ahead." << std::endl;
+                if (DEBUG_COND(myHolderMS)) {
+                    std::cout << "  Requesting encounter closure because both left conflict area of previous encounter but another encounter lies ahead." << std::endl;
+                }
 #endif
                 e->closingRequested = true;
             } else {
@@ -607,7 +610,7 @@ MSDevice_SSM::processEncounters(FoeInfoMap& foes, bool forceClose) {
             closeEncounter(e);
             ei = myActiveEncounters.erase(ei);
             if (myActiveEncounters.empty()) {
-                myOldestActiveEncounterBegin = INVALID;
+                myOldestActiveEncounterBegin = INVALID_DOUBLE;
             } else if (eBegin == myOldestActiveEncounterBegin) {
                 // Erased the oldest encounter, update myOldestActiveEncounterBegin
                 auto i = myActiveEncounters.begin();
@@ -633,13 +636,13 @@ MSDevice_SSM::qualifiesAsConflict(Encounter* e) {
                   << "'" << std::endl;
 #endif
 
-    if (myComputePET && e->PET.value != INVALID && e->PET.value <= myThresholds["PET"]) {
+    if (myComputePET && e->PET.value != INVALID_DOUBLE && e->PET.value <= myThresholds["PET"]) {
         return true;
     }
-    if (myComputeTTC && e->minTTC.value != INVALID && e->minTTC.value <= myThresholds["TTC"]) {
+    if (myComputeTTC && e->minTTC.value != INVALID_DOUBLE && e->minTTC.value <= myThresholds["TTC"]) {
         return true;
     }
-    if (myComputeDRAC && e->maxDRAC.value != INVALID && e->maxDRAC.value >= myThresholds["DRAC"]) {
+    if (myComputeDRAC && e->maxDRAC.value != INVALID_DOUBLE && e->maxDRAC.value >= myThresholds["DRAC"]) {
         return true;
     }
     return false;
@@ -648,7 +651,7 @@ MSDevice_SSM::qualifiesAsConflict(Encounter* e) {
 
 void
 MSDevice_SSM::closeEncounter(Encounter* e) {
-    assert(e->size()>0);
+    assert(e->size() > 0);
     // erase pointers (encounter is stored before being destroyed and pointers could become invalid)
     e->ego = nullptr;
     e->foe = nullptr;
@@ -657,8 +660,8 @@ MSDevice_SSM::closeEncounter(Encounter* e) {
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS)) {
         std::cout << SIMTIME << " closeEncounter() of vehicles '"
-            << e->egoID << "' and '" << e->foeID
-            << "' (was ranked as " << (wasConflict ? "conflict" : "non-conflict") << ")" << std::endl;
+                  << e->egoID << "' and '" << e->foeID
+                  << "' (was ranked as " << (wasConflict ? "conflict" : "non-conflict") << ")" << std::endl;
     }
 #endif
     if (wasConflict) {
@@ -696,7 +699,9 @@ MSDevice_SSM::closeEncounter(Encounter* e) {
 bool
 MSDevice_SSM::updateEncounter(Encounter* e, FoeInfo* foeInfo) {
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(e)) std::cout << SIMTIME << " updateEncounter() of vehicles '" << e->egoID << "' and '" << e->foeID << "'\n";
+    if (DEBUG_COND_ENCOUNTER(e)) {
+        std::cout << SIMTIME << " updateEncounter() of vehicles '" << e->egoID << "' and '" << e->foeID << "'\n";
+    }
 #endif
     assert(e->foe != 0);
 
@@ -723,7 +728,9 @@ MSDevice_SSM::updateEncounter(Encounter* e, FoeInfo* foeInfo) {
         // At this state, eInfo.type == ENCOUNTER_TYPE_NOCONFLICT_AHEAD implies that the foe
         // is either out of the device's range or its route does not interfere with the ego's route.
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << SIMTIME << " Encounter of vehicles '" << e->egoID << "' and '" << e->foeID << "' does not imply any conflict.\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << SIMTIME << " Encounter of vehicles '" << e->egoID << "' and '" << e->foeID << "' does not imply any conflict.\n";
+        }
 #endif
         updatePassedEncounter(e, foeInfo, eInfo);
 //        return;
@@ -755,13 +762,15 @@ MSDevice_SSM::updateEncounter(Encounter* e, FoeInfo* foeInfo) {
     checkConflictEntryAndExit(eInfo);
     if (e->size() == 0) {
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << SIMTIME << " type when creating encounter: " << eInfo.type << "\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << SIMTIME << " type when creating encounter: " << eInfo.type << "\n";
+        }
 #endif
         if (eInfo.type == ENCOUNTER_TYPE_FOE_LEFT_CONFLICT_AREA
-            || eInfo.type == ENCOUNTER_TYPE_EGO_LEFT_CONFLICT_AREA
-            || eInfo.type == ENCOUNTER_TYPE_BOTH_LEFT_CONFLICT_AREA
-            || eInfo.type == ENCOUNTER_TYPE_NOCONFLICT_AHEAD
-            || eInfo.type == ENCOUNTER_TYPE_BOTH_ENTERED_CONFLICT_AREA) {
+                || eInfo.type == ENCOUNTER_TYPE_EGO_LEFT_CONFLICT_AREA
+                || eInfo.type == ENCOUNTER_TYPE_BOTH_LEFT_CONFLICT_AREA
+                || eInfo.type == ENCOUNTER_TYPE_NOCONFLICT_AHEAD
+                || eInfo.type == ENCOUNTER_TYPE_BOTH_ENTERED_CONFLICT_AREA) {
             return false;
         }
     }
@@ -781,7 +790,7 @@ MSDevice_SSM::updateEncounter(Encounter* e, FoeInfo* foeInfo) {
     } else {
         // Add current states to trajectories and update type
         e->add(SIMTIME, eInfo.type, e->ego->getPosition(), e->ego->getVelocityVector(), e->foe->getPosition(), e->foe->getVelocityVector(),
-                eInfo.conflictPoint, eInfo.egoConflictEntryDist, eInfo.foeConflictEntryDist, eInfo.ttc, eInfo.drac, eInfo.pet);
+               eInfo.conflictPoint, eInfo.egoConflictEntryDist, eInfo.foeConflictEntryDist, eInfo.ttc, eInfo.drac, eInfo.pet);
     }
     // Keep encounter
     return true;
@@ -852,12 +861,22 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
     if (DEBUG_COND(e->ego))
         std::cout << SIMTIME << " estimateConflictTimes() for ego '" << e->egoID << "' and foe '" << e->foeID << "'\n"
                   << "    encounter type: " << eInfo.type << "\n"
-                  << "    egoConflictEntryDist=" << (eInfo.egoConflictEntryDist == INVALID ? "NA" : ::toString(eInfo.egoConflictEntryDist))
-                  << ", foeConflictEntryDist=" << (eInfo.foeConflictEntryDist == INVALID ? "NA" : ::toString(eInfo.foeConflictEntryDist))
+                  << "    egoConflictEntryDist=" << (eInfo.egoConflictEntryDist == INVALID_DOUBLE ? "NA" : ::toString(eInfo.egoConflictEntryDist))
+                  << ", foeConflictEntryDist=" << (eInfo.foeConflictEntryDist == INVALID_DOUBLE ? "NA" : ::toString(eInfo.foeConflictEntryDist))
                   << "\n    ego speed=" << e->ego->getSpeed()
                   << ", foe speed=" << e->foe->getSpeed()
                   << std::endl;
 #endif
+    if (type == ENCOUNTER_TYPE_COLLISION) {
+#ifdef DEBUG_SSM
+        eInfo.egoEstimatedConflictEntryTime = 0;
+        eInfo.foeEstimatedConflictEntryTime = 0;
+        if (DEBUG_COND(e->ego))
+            std::cout << "    encouter type " << type << " -> no exit times to be calculated."
+                      << std::endl;
+#endif
+        return;
+    }
 
     if (type == ENCOUNTER_TYPE_FOLLOWING_FOLLOWER || type == ENCOUNTER_TYPE_FOLLOWING_LEADER || type == ENCOUNTER_TYPE_MERGING_ADJACENT || type == ENCOUNTER_TYPE_ON_ADJACENT_LANES) {
         // No need to know the times until ...ConflictDistEntry, currently. They would correspond to an estimated time headway or similar.
@@ -890,14 +909,14 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
     }
 
     // Estimate entry times to stipulate a leader / follower relation for the encounter.
-    if (eInfo.egoConflictEntryDist > 0.) {
+    if (eInfo.egoConflictEntryDist > NUMERICAL_EPS) {
         eInfo.egoEstimatedConflictEntryTime = e->ego->getCarFollowModel().estimateArrivalTime(eInfo.egoConflictEntryDist, e->ego->getSpeed(), e->ego->getMaxSpeedOnLane(), MIN2(0., e->ego->getAcceleration()));
         assert(eInfo.egoEstimatedConflictEntryTime > 0.);
     } else {
         // ego already entered conflict area
         eInfo.egoEstimatedConflictEntryTime = 0.;
     }
-    if (eInfo.foeConflictEntryDist > 0.) {
+    if (eInfo.foeConflictEntryDist > NUMERICAL_EPS) {
         eInfo.foeEstimatedConflictEntryTime = e->foe->getCarFollowModel().estimateArrivalTime(eInfo.foeConflictEntryDist, e->foe->getSpeed(), e->foe->getMaxSpeedOnLane(), MIN2(0., e->foe->getAcceleration()));
         assert(eInfo.foeEstimatedConflictEntryTime > 0.);
     } else {
@@ -906,15 +925,15 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
     }
 
     if (type == ENCOUNTER_TYPE_ONCOMING) {
-        eInfo.egoEstimatedConflictEntryTime = eInfo.egoConflictEntryDist / (e->ego->getSpeed()+ e->foe->getSpeed());
+        eInfo.egoEstimatedConflictEntryTime = eInfo.egoConflictEntryDist / (e->ego->getSpeed() + e->foe->getSpeed());
         eInfo.foeEstimatedConflictEntryTime = eInfo.egoEstimatedConflictEntryTime;
     }
 
 #ifdef DEBUG_SSM
     if (DEBUG_COND(e->ego))
-        std::cout << "    Conflict type: " << toString(type) << "\n"
-                  << "    egoConflictEntryTime=" << (eInfo.egoEstimatedConflictEntryTime == INVALID ? "INVALID" : ::toString(eInfo.egoEstimatedConflictEntryTime))
-                  << ", foeConflictEntryTime=" << (eInfo.foeEstimatedConflictEntryTime == INVALID ? "INVALID" : ::toString(eInfo.foeEstimatedConflictEntryTime))
+        std::cout << "    Conflict type: " << encounterToString(type) << "\n"
+                  << "    egoConflictEntryTime=" << (eInfo.egoEstimatedConflictEntryTime == INVALID_DOUBLE ? "NA" : ::toString(eInfo.egoEstimatedConflictEntryTime))
+                  << ", foeConflictEntryTime=" << (eInfo.foeEstimatedConflictEntryTime == INVALID_DOUBLE ? "NA" : ::toString(eInfo.foeEstimatedConflictEntryTime))
                   << std::endl;
 #endif
 
@@ -944,8 +963,8 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
 
     // For merging and crossing situation, the leader/follower relation not determined by classifyEncounter()
     // This is done below based on the estimated conflict entry times
-    if (eInfo.egoEstimatedConflictEntryTime == 0. && eInfo.foeEstimatedConflictEntryTime == 0. && 
-            eInfo.egoConflictExitDist >= 0 && eInfo.foeConflictExitDist >=0) {
+    if (eInfo.egoEstimatedConflictEntryTime == 0. && eInfo.foeEstimatedConflictEntryTime == 0. &&
+            eInfo.egoConflictExitDist >= 0 && eInfo.foeConflictExitDist >= 0) {
         type = ENCOUNTER_TYPE_COLLISION;
         std::stringstream ss;
         ss << "SSM device of vehicle '" << e->egoID << "' detected collision with vehicle '" << e->foeID << "' at time " << SIMTIME;
@@ -955,7 +974,7 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
 #ifdef DEBUG_SSM
         if (DEBUG_COND(e->ego))
             std::cout << "    -> ego is estimated leader at conflict entry."
-                      << " egoConflictExitTime=" << (eInfo.egoEstimatedConflictExitTime == INVALID ? "NA" : ::toString(eInfo.egoEstimatedConflictExitTime))
+                      << " egoConflictExitTime=" << (eInfo.egoEstimatedConflictExitTime == INVALID_DOUBLE ? "NA" : ::toString(eInfo.egoEstimatedConflictExitTime))
                       << std::endl;
 #endif
         type = type == ENCOUNTER_TYPE_CROSSING ? ENCOUNTER_TYPE_CROSSING_LEADER : ENCOUNTER_TYPE_MERGING_LEADER;
@@ -964,7 +983,7 @@ MSDevice_SSM::estimateConflictTimes(EncounterApproachInfo& eInfo) {
 #ifdef DEBUG_SSM
         if (DEBUG_COND(e->ego))
             std::cout << "    -> foe is estimated leader at conflict entry."
-                      << " foeConflictExitTime=" << (eInfo.foeEstimatedConflictExitTime == INVALID ? "NA" : ::toString(eInfo.foeEstimatedConflictExitTime))
+                      << " foeConflictExitTime=" << (eInfo.foeEstimatedConflictExitTime == INVALID_DOUBLE ? "NA" : ::toString(eInfo.foeEstimatedConflictExitTime))
                       << std::endl;
 #endif
         type = type == ENCOUNTER_TYPE_CROSSING ? ENCOUNTER_TYPE_CROSSING_FOLLOWER : ENCOUNTER_TYPE_MERGING_FOLLOWER;
@@ -1020,9 +1039,9 @@ MSDevice_SSM::computeSSMs(EncounterApproachInfo& eInfo) const {
     if (DEBUG_COND(myHolderMS)) {
         Encounter* e = eInfo.encounter;
         std::cout << "computeSSMs() for encounter of vehicles '" << e->egoID << "' and '" << e->foeID << "':\n"
-                  << "  ttc=" << (eInfo.ttc == INVALID ? "INVALID" : ::toString(eInfo.ttc))
-                  << ", drac=" << (eInfo.drac == INVALID ? "INVALID" : ::toString(eInfo.drac))
-                  << ", pet=" << (eInfo.pet.second == INVALID ? "INVALID" : ::toString(eInfo.pet.second))
+                  << "  ttc=" << (eInfo.ttc == INVALID_DOUBLE ? "NA" : ::toString(eInfo.ttc))
+                  << ", drac=" << (eInfo.drac == INVALID_DOUBLE ? "NA" : ::toString(eInfo.drac))
+                  << ", pet=" << (eInfo.pet.second == INVALID_DOUBLE ? "NA" : ::toString(eInfo.pet.second))
                   << std::endl;
     }
 #endif
@@ -1041,7 +1060,7 @@ MSDevice_SSM::determinePET(EncounterApproachInfo& eInfo) const {
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS))
         std::cout << SIMTIME << " determinePET() for encounter of vehicles '" << e->egoID << "' and '" << e->foeID << "'"
-                  << "(type: " << toString(static_cast<EncounterType>(e->typeSpan.back())) << ")" << std::endl;
+                  << "(type: " << encounterToString(static_cast<EncounterType>(e->typeSpan.back())) << ")" << std::endl;
 #endif
 
     if (type == ENCOUNTER_TYPE_FOLLOWING_FOLLOWER || type == ENCOUNTER_TYPE_FOLLOWING_LEADER) {
@@ -1059,7 +1078,7 @@ MSDevice_SSM::determinePET(EncounterApproachInfo& eInfo) const {
                           << std::endl;
 #endif
             // pet must have been calculated already
-            assert(e->PET.value != INVALID);
+            assert(e->PET.value != INVALID_DOUBLE);
             return;
         }
 
@@ -1085,34 +1104,31 @@ MSDevice_SSM::determinePET(EncounterApproachInfo& eInfo) const {
 #endif
 
         // But both have passed the conflict area
-        assert(e->egoConflictEntryTime != INVALID || e->foeConflictEntryTime != INVALID);
+        assert(e->egoConflictEntryTime != INVALID_DOUBLE || e->foeConflictEntryTime != INVALID_DOUBLE);
 
         // Both have left the conflict region
-        // (Conflict may have started as one was already within the conflict area - thus the check for INVALID entry times)
-        if (e->foeConflictEntryTime == INVALID || (e->egoConflictEntryTime != INVALID && e->egoConflictEntryTime > e->foeConflictExitTime)) {
+        // (Conflict may have started as one was already within the conflict area - thus the check for invalid entry times)
+        if (e->foeConflictEntryTime == INVALID_DOUBLE || (e->egoConflictEntryTime != INVALID_DOUBLE && e->egoConflictEntryTime > e->foeConflictExitTime)) {
             pet.first = e->egoConflictEntryTime;
             pet.second = e->egoConflictEntryTime - e->foeConflictExitTime;
-        } else if (e->egoConflictEntryTime == INVALID || (e->egoConflictEntryTime != INVALID && e->foeConflictEntryTime > e->egoConflictExitTime)) {
+        } else if (e->egoConflictEntryTime == INVALID_DOUBLE || (e->egoConflictEntryTime != INVALID_DOUBLE && e->foeConflictEntryTime > e->egoConflictExitTime)) {
             pet.first = e->foeConflictEntryTime;
             pet.second = e->foeConflictEntryTime - e->egoConflictExitTime;
         } else {
 #ifdef DEBUG_SSM
             if (DEBUG_COND(myHolderMS))
-                std::cout << "Unexpected branch in determinePET: Both passed conflict area in the same step."
+                std::cout << "determinePET: Both passed conflict area in the same step. Assume collision"
                           << std::endl;
 #endif
-            pet.first = INVALID;
-            pet.second = INVALID;
-            assert(prevType != ENCOUNTER_TYPE_EGO_LEFT_CONFLICT_AREA
-                   && prevType != ENCOUNTER_TYPE_FOE_LEFT_CONFLICT_AREA);
-            assert(false); // let this fail for debug build
+            pet.first = e->egoConflictEntryTime;
+            pet.second = 0;
         }
 
         // Reset entry and exit times two allow an eventual subsequent re-use
-        e->egoConflictEntryTime = INVALID;
-        e->egoConflictExitTime = INVALID;
-        e->foeConflictEntryTime = INVALID;
-        e->foeConflictExitTime = INVALID;
+        e->egoConflictEntryTime = INVALID_DOUBLE;
+        e->egoConflictExitTime = INVALID_DOUBLE;
+        e->foeConflictEntryTime = INVALID_DOUBLE;
+        e->foeConflictExitTime = INVALID_DOUBLE;
 
 #ifdef DEBUG_SSM
         if (DEBUG_COND(myHolderMS))
@@ -1176,26 +1192,26 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
 
         // linearly extrapolated arrival times at the conflict
         // NOTE: These differ from the estimated times stored in eInfo
-        double egoEntryTime = e->ego->getSpeed() > 0 ? eInfo.egoConflictEntryDist / e->ego->getSpeed() : INVALID;
-        double egoExitTime = e->ego->getSpeed() > 0 ? eInfo.egoConflictExitDist / e->ego->getSpeed() : INVALID;
-        double foeEntryTime = e->foe->getSpeed() > 0 ? eInfo.foeConflictEntryDist / e->foe->getSpeed() : INVALID;
-        double foeExitTime = e->foe->getSpeed() > 0 ? eInfo.foeConflictExitDist / e->foe->getSpeed() : INVALID;
+        double egoEntryTime = e->ego->getSpeed() > 0 ? eInfo.egoConflictEntryDist / e->ego->getSpeed() : INVALID_DOUBLE;
+        double egoExitTime = e->ego->getSpeed() > 0 ? eInfo.egoConflictExitDist / e->ego->getSpeed() : INVALID_DOUBLE;
+        double foeEntryTime = e->foe->getSpeed() > 0 ? eInfo.foeConflictEntryDist / e->foe->getSpeed() : INVALID_DOUBLE;
+        double foeExitTime = e->foe->getSpeed() > 0 ? eInfo.foeConflictExitDist / e->foe->getSpeed() : INVALID_DOUBLE;
 
 #ifdef DEBUG_SSM
         if (DEBUG_COND(myHolderMS))
             std::cout << "   Conflict times with constant speed extrapolation for merging situation:\n   "
-                      << " egoEntryTime=" << (egoEntryTime == INVALID ? "NA" : ::toString(egoEntryTime))
-                      << ", egoExitTime=" << (egoExitTime == INVALID ? "NA" : ::toString(egoExitTime))
-                      << ", foeEntryTime=" << (foeEntryTime == INVALID ? "NA" : ::toString(foeEntryTime))
-                      << ", foeExitTime=" << (foeExitTime == INVALID ? "NA" : ::toString(foeExitTime))
+                      << " egoEntryTime=" << (egoEntryTime == INVALID_DOUBLE ? "NA" : ::toString(egoEntryTime))
+                      << ", egoExitTime=" << (egoExitTime == INVALID_DOUBLE ? "NA" : ::toString(egoExitTime))
+                      << ", foeEntryTime=" << (foeEntryTime == INVALID_DOUBLE ? "NA" : ::toString(foeEntryTime))
+                      << ", foeExitTime=" << (foeExitTime == INVALID_DOUBLE ? "NA" : ::toString(foeExitTime))
                       << std::endl;
 #endif
 
         // based on that, we obtain
-        if (egoEntryTime == INVALID || foeEntryTime == INVALID) {
+        if (egoEntryTime == INVALID_DOUBLE || foeEntryTime == INVALID_DOUBLE) {
             // at least one vehicle is stopped
-            ttc = INVALID;
-            drac = INVALID;
+            ttc = INVALID_DOUBLE;
+            drac = INVALID_DOUBLE;
 #ifdef DEBUG_SSM
             if (DEBUG_COND(myHolderMS)) {
                 std::cout << "    No TTC and DRAC computed as one vehicle is stopped." << std::endl;
@@ -1239,7 +1255,7 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
 
                 // ttc as for following situation (assumes no collision until leader merged)
                 double ttcAfterMerge = computeTTC(gapAfterMerge, followerSpeed, leaderSpeed);
-                ttc = ttcAfterMerge == INVALID ? INVALID : leaderExitTime + ttcAfterMerge;
+                ttc = ttcAfterMerge == INVALID_DOUBLE ? INVALID_DOUBLE : leaderExitTime + ttcAfterMerge;
             }
             if (myComputeDRAC) {
                 // Intitial gap. (May be negative only if the leader speed is higher than the follower speed, i.e., dv < 0)
@@ -1248,7 +1264,7 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
                     // Speed difference must be positive if g0<0.
                     assert(leaderSpeed - followerSpeed > 0);
                     // no deceleration needed for dv>0 and gap after merge >= 0
-                    drac = INVALID;
+                    drac = INVALID_DOUBLE;
                 } else {
                     // compute drac as for a following situation
                     drac = computeDRAC(g0, followerSpeed, leaderSpeed);
@@ -1256,14 +1272,14 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
             }
 #ifdef DEBUG_SSM
             if (DEBUG_COND(myHolderMS)) {
-                if (ttc == INVALID) {
+                if (ttc == INVALID_DOUBLE) {
                     // assert(dv >= 0);
-                    assert(drac == INVALID || drac == 0.0);
+                    assert(drac == INVALID_DOUBLE || drac == 0.0);
                     std::cout << "    Extrapolation does not predict any collision." << std::endl;
                 } else {
                     std::cout << "    Extrapolation predicts collision *after* merge point with TTC="
-                              << (ttc == INVALID ? "NA" : ::toString(ttc))
-                              << ", drac=" << (drac == INVALID ? "NA" : ::toString(drac)) << std::endl;
+                              << (ttc == INVALID_DOUBLE ? "NA" : ::toString(ttc))
+                              << ", drac=" << (drac == INVALID_DOUBLE ? "NA" : ::toString(drac)) << std::endl;
                 }
             }
 #endif
@@ -1283,7 +1299,7 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
             }
         } else {
             // encounter is expected to happen without collision
-            ttc = INVALID;
+            ttc = INVALID_DOUBLE;
         }
     } else if (type == ENCOUNTER_TYPE_CROSSING_LEADER
                || type == ENCOUNTER_TYPE_EGO_ENTERED_CONFLICT_AREA) {
@@ -1298,7 +1314,7 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
             }
         } else {
             // encounter is expected to happen without collision
-            ttc = INVALID;
+            ttc = INVALID_DOUBLE;
         }
     } else {
 #ifdef DEBUG_SSM
@@ -1312,7 +1328,7 @@ MSDevice_SSM::determineTTCandDRAC(EncounterApproachInfo& eInfo) const {
 
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS))
-        std::cout << "ttc=" << (ttc == INVALID ? "INVALID" : ::toString(ttc)) << ", drac=" << (drac == INVALID ? "INVALID" : ::toString(drac))
+        std::cout << "ttc=" << (ttc == INVALID_DOUBLE ? "NA" : ::toString(ttc)) << ", drac=" << (drac == INVALID_DOUBLE ? "NA" : ::toString(drac))
                   << std::endl;
 #endif
 }
@@ -1333,7 +1349,7 @@ MSDevice_SSM::computeTTC(double gap, double followerSpeed, double leaderSpeed) c
     }
     double dv = followerSpeed - leaderSpeed;
     if (dv <= 0.) {
-        return INVALID;    // no collision
+        return INVALID_DOUBLE;    // no collision
     }
 
     return gap / dv;
@@ -1348,7 +1364,7 @@ MSDevice_SSM::computeDRAC(double gap, double followerSpeed, double leaderSpeed) 
 //              << std::endl;
 //#endif
     if (gap <= 0.) {
-        return INVALID;    // collision!
+        return INVALID_DOUBLE;    // collision!
     }
     double dv = followerSpeed - leaderSpeed;
     if (dv <= 0.) {
@@ -1377,8 +1393,8 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
                   << "\ndEntry1=" << dEntry1 << ", dEntry2=" << dEntry2
                   << ", dExit1=" << dExit1 << ", dExit2=" << dExit2
                   << ",\nv1=" << v1 << ", v2=" << v2
-                  << "\ntEntry1=" << (tEntry1 == INVALID ? "NA" : ::toString(tEntry1)) << ", tEntry2=" << (tEntry2 == INVALID ? "NA" : ::toString(tEntry2))
-                  << ", tExit1=" << (tExit1 == INVALID ? "NA" : ::toString(tExit1)) << ", tExit2=" << (tExit2 == INVALID ? "NA" : ::toString(tExit2))
+                  << "\ntEntry1=" << (tEntry1 == INVALID_DOUBLE ? "NA" : ::toString(tEntry1)) << ", tEntry2=" << (tEntry2 == INVALID_DOUBLE ? "NA" : ::toString(tEntry2))
+                  << ", tExit1=" << (tExit1 == INVALID_DOUBLE ? "NA" : ::toString(tExit1)) << ", tExit2=" << (tExit2 == INVALID_DOUBLE ? "NA" : ::toString(tExit2))
                   << std::endl;
 #endif
     if (dExit1 <= 0. || dExit2 <= 0.) {
@@ -1397,7 +1413,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
             std::cout << "Both entered conflict area but neither left. -> collision!" << std::endl;
         }
 #endif
-        return INVALID;
+        return INVALID_DOUBLE;
     }
 
     double drac = std::numeric_limits<double>::max();
@@ -1408,7 +1424,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
             std::cout << "Ego could break..." << std::endl;
         }
 #endif
-        if (tExit2 != INVALID) {
+        if (tExit2 != INVALID_DOUBLE) {
             // Vehicle 2 is expected to leave conflict area at t2
             drac = MIN2(drac, 2 * (v1 - dEntry1 / tExit2) / tExit2);
 #ifdef DEBUG_SSM_DRAC
@@ -1418,7 +1434,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
 #endif
         } else {
             // Vehicle 2 is expected to stop on conflict area or earlier
-            if (tEntry2 != INVALID) {
+            if (tEntry2 != INVALID_DOUBLE) {
                 // ... on conflict area => veh1 has to stop before entry
                 drac = MIN2(drac, computeDRAC(dEntry1, v1, 0));
 #ifdef DEBUG_SSM_DRAC
@@ -1444,7 +1460,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
             std::cout << "Foe could break..." << std::endl;
         }
 #endif
-        if (tExit1 != INVALID) {
+        if (tExit1 != INVALID_DOUBLE) {
             // Vehicle 1 is expected to leave conflict area at t1
 #ifdef DEBUG_SSM_DRAC
             if (DEBUG_COND(eInfo.encounter->ego)) {
@@ -1454,7 +1470,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
             drac = MIN2(drac, 2 * (v2 - dEntry2 / tExit1) / tExit1);
         } else {
             // Vehicle 1 is expected to stop on conflict area or earlier
-            if (tEntry1 != INVALID) {
+            if (tEntry1 != INVALID_DOUBLE) {
                 // ... on conflict area => veh2 has to stop before entry
 #ifdef DEBUG_SSM_DRAC
                 if (DEBUG_COND(eInfo.encounter->ego)) {
@@ -1473,7 +1489,7 @@ MSDevice_SSM::computeDRAC(const EncounterApproachInfo& eInfo) {
         }
     }
 
-    return drac > 0 ? drac : INVALID;
+    return drac > 0 ? drac : INVALID_DOUBLE;
 }
 
 void
@@ -1488,13 +1504,13 @@ MSDevice_SSM::checkConflictEntryAndExit(EncounterApproachInfo& eInfo) {
     const bool egoPastConflictExit = eInfo.egoConflictExitDist < 0.0;
 
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(e)) { 
+    if (DEBUG_COND_ENCOUNTER(e)) {
         std::cout << SIMTIME << " checkConflictEntryAndExit() for encounter of vehicles '" << e->egoID << "' and '" << e->foeID << "'"
-            << "  foeEntryDist=" << eInfo.foeConflictEntryDist
-            << "  egoEntryDist=" << eInfo.egoConflictEntryDist
-            << "  foeExitDist=" << eInfo.foeConflictExitDist
-            << "  egoExitDist=" << eInfo.egoConflictExitDist
-            << "\n";
+                  << "  foeEntryDist=" << eInfo.foeConflictEntryDist
+                  << "  egoEntryDist=" << eInfo.egoConflictEntryDist
+                  << "  foeExitDist=" << eInfo.foeConflictExitDist
+                  << "  egoExitDist=" << eInfo.egoConflictExitDist
+                  << "\n";
     }
 #endif
 
@@ -1550,11 +1566,13 @@ MSDevice_SSM::checkConflictEntryAndExit(EncounterApproachInfo& eInfo) {
 //#endif
 
     // Check if ego entered in last step
-    if (e->egoConflictEntryTime == INVALID && egoPastConflictEntry && prevEgoConflictEntryDist >= 0) {
+    if (e->egoConflictEntryTime == INVALID_DOUBLE && egoPastConflictEntry && prevEgoConflictEntryDist >= 0) {
         // ego must have entered the conflict in the last step. Determine exact entry time
         e->egoConflictEntryTime = SIMTIME - TS + MSCFModel::passingTime(-prevEgoConflictEntryDist, 0., -eInfo.egoConflictEntryDist, e->ego->getPreviousSpeed(), e->ego->getSpeed());
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    ego entered conflict area at t=" << e->egoConflictEntryTime << std::endl;
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    ego entered conflict area at t=" << e->egoConflictEntryTime << std::endl;
+        }
 #endif
         // Update encounter type (only done here for entering, the other transitions are done in updatePassedEncounter)
         if (prevType == ENCOUNTER_TYPE_CROSSING_FOLLOWER
@@ -1564,11 +1582,13 @@ MSDevice_SSM::checkConflictEntryAndExit(EncounterApproachInfo& eInfo) {
     }
 
     // Check if foe entered in last step
-    if (e->foeConflictEntryTime == INVALID && foePastConflictEntry && prevFoeConflictEntryDist >= 0) {
+    if (e->foeConflictEntryTime == INVALID_DOUBLE && foePastConflictEntry && prevFoeConflictEntryDist >= 0) {
         // foe must have entered the conflict in the last step. Determine exact entry time
         e->foeConflictEntryTime = SIMTIME - TS + MSCFModel::passingTime(-prevFoeConflictEntryDist, 0., -eInfo.foeConflictEntryDist, e->foe->getPreviousSpeed(), e->foe->getSpeed());
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    foe entered conflict area at t=" << e->foeConflictEntryTime << std::endl;
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    foe entered conflict area at t=" << e->foeConflictEntryTime << std::endl;
+        }
 #endif
         // Update encounter type (only done here for entering, the other transitions are done in updatePassedEncounter)
         if (prevType == ENCOUNTER_TYPE_CROSSING_FOLLOWER
@@ -1578,13 +1598,15 @@ MSDevice_SSM::checkConflictEntryAndExit(EncounterApproachInfo& eInfo) {
     }
 
     // Check if ego left conflict area
-    if (e->egoConflictExitTime == INVALID && eInfo.egoConflictExitDist < 0 && prevEgoConflictExitDist >= 0) {
+    if (e->egoConflictExitTime == INVALID_DOUBLE && eInfo.egoConflictExitDist < 0 && prevEgoConflictExitDist >= 0) {
         // ego must have left the conflict area in the last step. Determine exact exit time
         e->egoConflictExitTime = SIMTIME - TS + MSCFModel::passingTime(-prevEgoConflictExitDist, 0., -eInfo.egoConflictExitDist, e->ego->getPreviousSpeed(), e->ego->getSpeed());
         // Add cross section to calculate PET for foe
 //        e->foePETCrossSections.push_back(std::make_pair(eInfo.foeConflictEntryCrossSection, e->egoConflictExitTime));
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    ego left conflict area at t=" << e->egoConflictExitTime << std::endl;
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    ego left conflict area at t=" << e->egoConflictExitTime << std::endl;
+        }
 #endif
         // Update encounter type (only done here for entering, the other transitions are done in updatePassedEncounter)
         if (prevType == ENCOUNTER_TYPE_CROSSING_FOLLOWER
@@ -1594,13 +1616,15 @@ MSDevice_SSM::checkConflictEntryAndExit(EncounterApproachInfo& eInfo) {
     }
 
     // Check if foe left conflict area
-    if (e->foeConflictExitTime == INVALID && eInfo.foeConflictExitDist < 0 && prevFoeConflictExitDist >= 0) {
+    if (e->foeConflictExitTime == INVALID_DOUBLE && eInfo.foeConflictExitDist < 0 && prevFoeConflictExitDist >= 0) {
         // foe must have left the conflict area in the last step. Determine exact exit time
         e->foeConflictExitTime = SIMTIME - TS + MSCFModel::passingTime(-prevFoeConflictExitDist, 0., -eInfo.foeConflictExitDist, e->foe->getPreviousSpeed(), e->foe->getSpeed());
         // Add cross section to calculate PET for ego
 //        e->egoPETCrossSections.push_back(std::make_pair(eInfo.egoConflictEntryCrossSection, e->foeConflictExitTime));
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    foe left conflict area at t=" << e->foeConflictExitTime << std::endl;
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    foe left conflict area at t=" << e->foeConflictExitTime << std::endl;
+        }
 #endif
         // Update encounter type (only done here for entering, the other transitions are done in updatePassedEncounter)
         if (prevType == ENCOUNTER_TYPE_CROSSING_FOLLOWER
@@ -1615,7 +1639,9 @@ void
 MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApproachInfo& eInfo) {
 
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(e)) std::cout << SIMTIME << " updatePassedEncounter() for vehicles '" << e->egoID << "' and '" << e->foeID << "'\n";
+    if (DEBUG_COND_ENCOUNTER(e)) {
+        std::cout << SIMTIME << " updatePassedEncounter() for vehicles '" << e->egoID << "' and '" << e->foeID << "'\n";
+    }
 #endif
 
     if (foeInfo == nullptr) {
@@ -1623,7 +1649,7 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
         e->countDownExtraTime(TS);
 #ifdef DEBUG_ENCOUNTER
         if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    Foe is out of range. Counting down extra time."
-                      << " Remaining seconds before closing encounter: " << e->getRemainingExtraTime() << std::endl;
+                                                   << " Remaining seconds before closing encounter: " << e->getRemainingExtraTime() << std::endl;
 #endif
 
     } else {
@@ -1638,7 +1664,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
     if (lastPotentialConflictType == ENCOUNTER_TYPE_NOCONFLICT_AHEAD) {
         // This encounter was no conflict in the last step -> remains so
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    This encounter wasn't classified as a potential conflict lately.\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    This encounter wasn't classified as a potential conflict lately.\n";
+        }
 #endif
         if (foeInfo == nullptr) {
             // Encounter was either never a potential conflict and foe is out of range
@@ -1651,7 +1679,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
 #endif
             e->closingRequested = true;
 #ifdef DEBUG_ENCOUNTER
-            if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    Closing encounter.\n";
+            if (DEBUG_COND_ENCOUNTER(e)) {
+                std::cout << "    Closing encounter.\n";
+            }
 #endif
             eInfo.type = ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
         }
@@ -1661,7 +1691,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
         // if a following situation leads to a no-conflict situation this encounter switches no-conflict, since no further computations (PET) are needed.
         eInfo.type = ENCOUNTER_TYPE_FOLLOWING_PASSED;
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    Encounter was previously classified as a follow/lead situation.\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    Encounter was previously classified as a follow/lead situation.\n";
+        }
 #endif
     } else if (lastPotentialConflictType == ENCOUNTER_TYPE_MERGING_FOLLOWER
                || lastPotentialConflictType == ENCOUNTER_TYPE_MERGING_LEADER
@@ -1670,7 +1702,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
         // or route- or lane-changes removed the conflict.
         eInfo.type = ENCOUNTER_TYPE_MERGING_PASSED;
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    Encounter was previously classified as a merging situation.\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    Encounter was previously classified as a merging situation.\n";
+        }
 #endif
     }
     if (lastPotentialConflictType == ENCOUNTER_TYPE_CROSSING_FOLLOWER
@@ -1685,15 +1719,17 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
         // Encounter has been a crossing situation.
 
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e)) std::cout << "    Encounter was previously classified as a crossing situation of type " << lastPotentialConflictType << ".\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    Encounter was previously classified as a crossing situation of type " << lastPotentialConflictType << ".\n";
+        }
 #endif
         // For passed encounters, the xxxConflictAreaLength variables are not determined before -> we use the stored values.
 
         // TODO: This could also more precisely be calculated wrt the angle of the crossing *at the conflict point*
-        if (eInfo.egoConflictAreaLength == INVALID) {
+        if (eInfo.egoConflictAreaLength == INVALID_DOUBLE) {
             eInfo.egoConflictAreaLength = e->foe->getWidth();
         }
-        if (eInfo.foeConflictAreaLength == INVALID) {
+        if (eInfo.foeConflictAreaLength == INVALID_DOUBLE) {
             eInfo.foeConflictAreaLength = e->ego->getWidth();
         }
 
@@ -1754,7 +1790,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
         // TODO: adjust the conflict distances according to lateral movement for single ENTERED-cases
 
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(e))  std::cout << "    Updated classification: " << eInfo.type << "\n";
+        if (DEBUG_COND_ENCOUNTER(e)) {
+            std::cout << "    Updated classification: " << eInfo.type << "\n";
+        }
 #endif
     }
 }
@@ -1763,7 +1801,9 @@ MSDevice_SSM::updatePassedEncounter(Encounter* e, FoeInfo* foeInfo, EncounterApp
 MSDevice_SSM::EncounterType
 MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& eInfo)  const {
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "classifyEncounter() called.\n";
+    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+        std::cout << "classifyEncounter() called.\n";
+    }
 #endif
     if (foeInfo == nullptr) {
         // foeInfo == 0 signalizes, that no corresponding foe info was returned by findSurroundingVehicles(),
@@ -1776,16 +1816,18 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
     EncounterType prevType = e->typeSpan.size() > 0 ? static_cast<EncounterType>(e->typeSpan.back()) : ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
     if (e->typeSpan.size() > 0
             && (prevType == ENCOUNTER_TYPE_EGO_ENTERED_CONFLICT_AREA
-                ||  prevType == ENCOUNTER_TYPE_FOE_ENTERED_CONFLICT_AREA
-                ||  prevType == ENCOUNTER_TYPE_EGO_LEFT_CONFLICT_AREA
-                ||  prevType == ENCOUNTER_TYPE_FOE_LEFT_CONFLICT_AREA
-                ||  prevType == ENCOUNTER_TYPE_BOTH_ENTERED_CONFLICT_AREA)) {
+                || prevType == ENCOUNTER_TYPE_FOE_ENTERED_CONFLICT_AREA
+                || prevType == ENCOUNTER_TYPE_EGO_LEFT_CONFLICT_AREA
+                || prevType == ENCOUNTER_TYPE_FOE_LEFT_CONFLICT_AREA
+                || prevType == ENCOUNTER_TYPE_BOTH_ENTERED_CONFLICT_AREA)) {
         // This is an ongoing crossing situation with at least one of the vehicles not
         // having passed the conflict area.
         // -> Merely trace the change of distances to the conflict entry / exit
         // -> Derefer this to updatePassedEncounter, where this is done anyhow.
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "    Ongoing crossing conflict will be traced by passedEncounter().\n";
+        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+            std::cout << "    Ongoing crossing conflict will be traced by passedEncounter().\n";
+        }
 #endif
         return prevType;
     }
@@ -1804,7 +1846,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
     const MSLane* foeConflictLane = findFoeConflictLane(e->foe, foeInfo->egoConflictLane, foeDistToConflictLane);
 
 #ifdef DEBUG_ENCOUNTER
-    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
         std::cout << "  egoConflictLane='" << (egoConflictLane == 0 ? "NULL" : egoConflictLane->getID()) << "'\n"
                   << "  foeConflictLane='" << (foeConflictLane == 0 ? "NULL" : foeConflictLane->getID()) << "'\n"
                   << "  egoDistToConflictLane=" << egoDistToConflictLane
@@ -1827,16 +1869,18 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
         // foe vehicle is not on course towards the ego's route (see findFoeConflictLane)
         type = ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
 #ifdef DEBUG_ENCOUNTER
-        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: No conflict.\n";
+        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+            std::cout << "-> Encounter type: No conflict.\n";
+        }
 #endif
     } else if (!egoConflictLane->isInternal()) {
         // The conflict lane is non-internal, therefore we either have no potential conflict or a lead/follow situation (i.e., no crossing or merging)
         if (egoConflictLane == egoLane) {
+            const bool egoOpposite = e->ego->getLaneChangeModel().isOpposite();
+            const bool foeOpposite = e->foe->getLaneChangeModel().isOpposite();
             // The conflict point is on the ego's current lane.
             if (foeLane == egoLane) {
                 // Foe is on the same non-internal lane
-                const bool egoOpposite = e->ego->getLaneChangeModel().isOpposite();
-                const bool foeOpposite = e->foe->getLaneChangeModel().isOpposite();
                 if (!egoOpposite && !foeOpposite) {
                     if (e->ego->getPositionOnLane() > e->foe->getPositionOnLane()) {
                         type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
@@ -1846,7 +1890,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         eInfo.egoConflictEntryDist = e->foe->getBackPositionOnLane() - e->ego->getPositionOnLane();
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: Lead/follow-situation on non-internal lane '" << egoLane->getID() << "'\n";
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: Lead/follow-situation on non-internal lane '" << egoLane->getID() << "'\n";
+                    }
 #endif
                 } else if (egoOpposite && foeOpposite) {
                     if (e->ego->getPositionOnLane() < e->foe->getPositionOnLane()) {
@@ -1857,9 +1903,11 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         eInfo.egoConflictEntryDist = -(e->foe->getBackPositionOnLane() - e->ego->getPositionOnLane());
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: Lead/follow-situation  while both are driving in the opposite direction on non-internal lane '" << egoLane->getID() << "'\n";
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: Lead/follow-situation  while both are driving in the opposite direction on non-internal lane '" << egoLane->getID() << "'\n";
+                    }
 #endif
-                } else { 
+                } else {
                     type = ENCOUNTER_TYPE_ONCOMING;
                     const double gap = e->ego->getPositionOnLane() - e->foe->getPositionOnLane();
                     if (egoOpposite) {
@@ -1878,7 +1926,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         }
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: oncoming on non-internal lane '" << egoLane->getID() << "'\n";
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: oncoming on non-internal lane '" << egoLane->getID() << "'\n";
+                    }
 #endif
 
                 }
@@ -1887,28 +1937,81 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                 // XXX: this disregards conflicts for vehicles on adjacent lanes
                 type = ENCOUNTER_TYPE_ON_ADJACENT_LANES;
 #ifdef DEBUG_ENCOUNTER
-                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: " << type << std::endl;
+                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                    std::cout << "-> Encounter type: " << type << std::endl;
+                }
 #endif
             } else {
-                assert(&(egoLane->getEdge()) == &(foeConflictLane->getEdge()));
-                assert(egoDistToConflictLane <= 0);
-                // Foe must be on a route leading into the ego's edge
-                if (foeConflictLane == egoLane) {
-                    type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
-                    eInfo.foeConflictEntryDist = foeDistToConflictLane + e->ego->getBackPositionOnLane();
+
+                if (!egoOpposite && !foeOpposite) {
+
+                    assert(&(egoLane->getEdge()) == &(foeConflictLane->getEdge()));
+                    assert(egoDistToConflictLane <= 0);
+                    // Foe must be on a route leading into the ego's edge
+                    if (foeConflictLane == egoLane) {
+                        type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
+                        eInfo.foeConflictEntryDist = foeDistToConflictLane + e->ego->getBackPositionOnLane();
 
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
-                        std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' leads foe '"
-                                  << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
-                                  << " (gap = " << eInfo.foeConflictEntryDist << ")\n";
+                        if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
+                            std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' leads foe '"
+                                      << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
+                                      << " (gap = " << eInfo.foeConflictEntryDist << ")\n";
+#endif
+                    } else {
+                        // Foe's route leads to an adjacent lane of the current lane of the ego
+                        type = ENCOUNTER_TYPE_ON_ADJACENT_LANES;
+#ifdef DEBUG_ENCOUNTER
+                        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                            std::cout << "-> Encounter type: " << type << std::endl;
+                        }
+#endif
+                    }
+
+                } else if (egoOpposite && foeOpposite) {
+                    // XXX determine follower relationship by searching for the foe lane in the opposites of ego bestlanes
+                    type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
+                    /*
+                    if (e->ego->getPositionOnLane() < e->foe->getPositionOnLane()) {
+                    type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
+                    eInfo.foeConflictEntryDist = -(e->ego->getBackPositionOnLane() - e->foe->getPositionOnLane());
+                    } else {
+                    type = ENCOUNTER_TYPE_FOLLOWING_FOLLOWER;
+                    eInfo.egoConflictEntryDist = -(e->foe->getBackPositionOnLane() - e->ego->getPositionOnLane());
+                    }
+                    */
+#ifdef DEBUG_ENCOUNTER
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: Lead/follow-situation  while both are driving in the opposite direction on non-internal lane '" << egoLane->getID() << "'\n";
+                    }
 #endif
                 } else {
-                    // Foe's route leads to an adjacent lane of the current lane of the ego
-                    type = ENCOUNTER_TYPE_ON_ADJACENT_LANES;
+                    type = ENCOUNTER_TYPE_ONCOMING;
+                    // XXX determine distance by searching for the foe lane in the opposites of ego bestlanes
+                    /*
+                    const double gap = e->ego->getPositionOnLane() - e->foe->getPositionOnLane();
+                    if (egoOpposite) {
+                    if (e->ego->getPositionOnLane() > e->foe->getPositionOnLane()) {
+                    eInfo.egoConflictEntryDist = gap;
+                    eInfo.foeConflictEntryDist = gap;
+                    } else {
+                    type = ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
+                    }
+                    } else {
+                    if (e->ego->getPositionOnLane() < e->foe->getPositionOnLane()) {
+                    eInfo.egoConflictEntryDist = -gap;
+                    eInfo.foeConflictEntryDist = -gap;
+                    } else {
+                    type = ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
+                    }
+                    }
+                    */
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: " << type << std::endl;
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: oncoming on non-internal lane '" << egoLane->getID() << "'\n";
+                    }
 #endif
+
                 }
             }
         } else {
@@ -1922,7 +2025,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                 type = ENCOUNTER_TYPE_FOLLOWING_FOLLOWER;
                 eInfo.egoConflictEntryDist = egoDistToConflictLane + e->foe->getBackPositionOnLane();
 #ifdef DEBUG_ENCOUNTER
-                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                     std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' follows foe '"
                               << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                               << " (gap = " << eInfo.egoConflictEntryDist << ", case1)\n";
@@ -1931,7 +2034,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                 // Ego's route leads to an adjacent lane of the current lane of the foe
                 type = ENCOUNTER_TYPE_ON_ADJACENT_LANES;
 #ifdef DEBUG_ENCOUNTER
-                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: " << type << std::endl;
+                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                    std::cout << "-> Encounter type: " << type << std::endl;
+                }
 #endif
             }
         }
@@ -1946,7 +2051,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                 // XXX: this disregards conflicts for vehicles on adjacent internal lanes
                 type = ENCOUNTER_TYPE_ON_ADJACENT_LANES;
 #ifdef DEBUG_ENCOUNTER
-                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: " << type << std::endl;
+                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                    std::cout << "-> Encounter type: " << type << std::endl;
+                }
 #endif
             } else {
                 // Lead / follow situation on connection
@@ -1958,10 +2065,10 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         eInfo.foeConflictEntryDist += e->ego->getLane()->getIncomingLanes()[0].lane->getLength();
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                         std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' leads foe '"
-                            << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
-                            << " (gap = " << eInfo.foeConflictEntryDist << ")\n";
+                                  << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
+                                  << " (gap = " << eInfo.foeConflictEntryDist << ")\n";
 #endif
                 } else if (egoLane != egoConflictLane && foeLane == foeConflictLane) {
                     // foe on junction, ego not yet
@@ -1971,7 +2078,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         eInfo.egoConflictEntryDist += e->foe->getLane()->getIncomingLanes()[0].lane->getLength();
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                         std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' follows foe '"
                                   << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                   << " (gap = " << eInfo.egoConflictEntryDist << ", case2)\n";
@@ -1981,7 +2088,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                     eInfo.foeConflictEntryDist = foeDistToConflictLane;
                     eInfo.egoConflictEntryDist = egoDistToConflictLane;
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                         std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' merges with foe '"
                                   << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                   << " (gap = " << eInfo.egoConflictEntryDist << ", case5)\n";
@@ -1999,7 +2106,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                             type = ENCOUNTER_TYPE_FOLLOWING_LEADER;
                             eInfo.foeConflictEntryDist = foeDistToConflictLane + e->ego->getBackPositionOnLane();
 #ifdef DEBUG_ENCOUNTER
-                            if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                            if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                                 std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' leads foe '"
                                           << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                           << " (gap = " << eInfo.foeConflictEntryDist << ")"
@@ -2009,7 +2116,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                             type = ENCOUNTER_TYPE_FOLLOWING_FOLLOWER;
                             eInfo.egoConflictEntryDist = egoDistToConflictLane + e->foe->getBackPositionOnLane();
 #ifdef DEBUG_ENCOUNTER
-                            if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                            if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                                 std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' follows foe '"
                                           << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                           << " (gap = " << eInfo.egoConflictEntryDist << ", case3)"
@@ -2019,7 +2126,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                     } else {
                         // ego and foe on distinct, consecutive internal lanes
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "    Lead/follow situation on consecutive internal lanes." << std::endl;
+                        if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                            std::cout << "    Lead/follow situation on consecutive internal lanes." << std::endl;
+                        }
 #endif
                         MSLane* lane = egoEntryLink->getViaLane();
 #ifdef _MSC_VER
@@ -2045,7 +2154,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                                 eInfo.egoConflictEntryDist += e->foe->getBackPositionOnLane();
                                 egoConflictLane = lane;
 #ifdef DEBUG_ENCOUNTER
-                                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                                if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                                     std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' follows foe '"
                                               << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                               << " (gap = " << eInfo.egoConflictEntryDist << ", case4)"
@@ -2065,7 +2174,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                                 eInfo.foeConflictEntryDist += e->ego->getBackPositionOnLane();
                                 foeConflictLane = lane;
 #ifdef DEBUG_ENCOUNTER
-                                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                                if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                                     std::cout << "-> Encounter type: Ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' leads foe '"
                                               << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                               << " (gap = " << eInfo.foeConflictEntryDist << ")"
@@ -2078,7 +2187,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                         }
                     }
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                         std::cout << "-> Encounter type: Lead/follow-situation on connection from '" << egoEntryLink->getLaneBefore()->getID()
                                   << "' to '" << egoEntryLink->getLane()->getID() << "'" << std::endl;
 #endif
@@ -2093,18 +2202,20 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
             bool crossOrMerge = (find(egoFoeLinks.begin(), egoFoeLinks.end(), foeEntryLink) != egoFoeLinks.end()
                                  || std::find(foeFoeLinks.begin(), foeFoeLinks.end(), egoEntryLink) != foeFoeLinks.end());
             if (!crossOrMerge) {
-//                if (&(foeEntryLink->getLane()->getEdge()) == &(egoEntryLink->getLane()->getEdge())) {
-//                    // XXX: the situation of merging into adjacent lanes is disregarded for now <- the alleged situation appears to imply crossOrMerge!!!
-//                    type = ENCOUNTER_TYPE_MERGING_ADJACENT;
-//#ifdef DEBUG_SSM
-//                    std::cout << "-> Encounter type: No conflict (adjacent lanes)." << std::endl;
-//#endif
-//                } else {
+                //                if (&(foeEntryLink->getLane()->getEdge()) == &(egoEntryLink->getLane()->getEdge())) {
+                //                    // XXX: the situation of merging into adjacent lanes is disregarded for now <- the alleged situation appears to imply crossOrMerge!!!
+                //                    type = ENCOUNTER_TYPE_MERGING_ADJACENT;
+                //#ifdef DEBUG_SSM
+                //                    std::cout << "-> Encounter type: No conflict (adjacent lanes)." << std::endl;
+                //#endif
+                //                } else {
                 type = ENCOUNTER_TYPE_NOCONFLICT_AHEAD;
 #ifdef DEBUG_ENCOUNTER
-                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: No conflict.\n";
+                if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                    std::cout << "-> Encounter type: No conflict.\n";
+                }
 #endif
-//                }
+                //                }
             } else if (&(foeEntryLink->getLane()->getEdge()) == &(egoEntryLink->getLane()->getEdge())) {
                 if (foeEntryLink->getLane() == egoEntryLink->getLane()) {
                     type = ENCOUNTER_TYPE_MERGING;
@@ -2127,7 +2238,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                     }
 
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) 
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter))
                         std::cout << "-> Encounter type: Merging situation of ego '" << e->ego->getID() << "' on lane '" << egoLane->getID() << "' and foe '"
                                   << e->foe->getID() << "' on lane '" << foeLane->getID() << "'"
                                   << "\nDistances to merge-point: ego: " << eInfo.egoConflictEntryDist << ", foe: " << eInfo.foeConflictEntryDist
@@ -2137,7 +2248,9 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                     // Links leading to the same edge but different lanes. XXX: Disregards conflicts on adjacent lanes
                     type = ENCOUNTER_TYPE_MERGING_ADJACENT;
 #ifdef DEBUG_ENCOUNTER
-                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) std::cout << "-> Encounter type: No conflict: " << type << std::endl;
+                    if (DEBUG_COND_ENCOUNTER(eInfo.encounter)) {
+                        std::cout << "-> Encounter type: No conflict: " << type << std::endl;
+                    }
 #endif
                 }
             } else {
@@ -2158,45 +2271,57 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
                 // find the distances to the conflict from the junction entry for both vehicles
                 // Here we also determine the real crossing lanes (before the conflict lane is the first lane of the connection)
                 // for the ego
-                double egoDistToConflictFromJunctionEntry = INVALID;
+                double egoDistToConflictFromJunctionEntry = INVALID_DOUBLE;
                 double foeInternalLaneLengthsBeforeCrossing = 0.;
                 while (foeConflictLane != nullptr && foeConflictLane->isInternal()) {
                     egoDistToConflictFromJunctionEntry = egoEntryLink->getLengthsBeforeCrossing(foeConflictLane);
-                    if (egoDistToConflictFromJunctionEntry != INVALID) {
+                    if (egoDistToConflictFromJunctionEntry != INVALID_DOUBLE) {
                         // found correct foeConflictLane
                         egoDistToConflictFromJunctionEntry += 0.5 * (foeConflictLane->getWidth() - e->foe->getVehicleType().getWidth());
                         break;
                     } else {
                         foeInternalLaneLengthsBeforeCrossing += foeConflictLane->getLength();
                     }
+                    if (!foeConflictLane->getCanonicalSuccessorLane()->isInternal()) {
+                        // intersection has wierd geometry and the intersection was found
+                        egoDistToConflictFromJunctionEntry = 0;
+                        WRITE_WARNINGF("Cannot compute SSM due to bad internal lane geometry at junction '%'.", egoEntryLink->getJunction()->getID())
+                        break;
+                    }
                     foeConflictLane = foeConflictLane->getCanonicalSuccessorLane();
                     assert(foeConflictLane != 0 && foeConflictLane->isInternal()); // this loop should be ended by the break! Otherwise the lanes do not cross, which should be the case here.
                 }
-                assert(egoDistToConflictFromJunctionEntry != INVALID);
+                assert(egoDistToConflictFromJunctionEntry != INVALID_DOUBLE);
 
                 // for the foe
-                double foeDistToConflictFromJunctionEntry = INVALID;
+                double foeDistToConflictFromJunctionEntry = INVALID_DOUBLE;
                 double egoInternalLaneLengthsBeforeCrossing = 0.;
-                foeDistToConflictFromJunctionEntry = INVALID;
+                foeDistToConflictFromJunctionEntry = INVALID_DOUBLE;
                 while (egoConflictLane != nullptr && egoConflictLane->isInternal()) {
                     foeDistToConflictFromJunctionEntry = foeEntryLink->getLengthsBeforeCrossing(egoConflictLane);
-                    if (foeDistToConflictFromJunctionEntry != INVALID) {
+                    if (foeDistToConflictFromJunctionEntry != INVALID_DOUBLE) {
                         // found correct egoConflictLane
                         foeDistToConflictFromJunctionEntry += 0.5 * (egoConflictLane->getWidth() - e->ego->getVehicleType().getWidth());
                         break;
                     } else {
+                        if (!egoConflictLane->getCanonicalSuccessorLane()->isInternal()) {
+                            // intersection has wierd geometry and the intersection was found
+                            foeDistToConflictFromJunctionEntry = 0;
+                            WRITE_WARNINGF("Cannot compute SSM due to bad internal lane geometry at junction '%'.", foeEntryLink->getJunction()->getID())
+                            break;
+                        }
                         egoInternalLaneLengthsBeforeCrossing += egoConflictLane->getLength();
                     }
                     egoConflictLane = egoConflictLane->getCanonicalSuccessorLane();
                     assert(egoConflictLane != 0 && egoConflictLane->isInternal()); // this loop should be ended by the break! Otherwise the lanes do not cross, which should be the case here.
                 }
-                assert(foeDistToConflictFromJunctionEntry != INVALID);
+                assert(foeDistToConflictFromJunctionEntry != INVALID_DOUBLE);
 
                 // store conflict entry information in eInfo
 
-//                // TO-DO: equip these with exit times to store relevant PET sections in encounter
-//                eInfo.egoConflictEntryCrossSection = std::make_pair(egoConflictLane, egoDistToConflictFromJunctionEntry - egoInternalLaneLengthsBeforeCrossing);
-//                eInfo.foeConflictEntryCrossSection = std::make_pair(foeConflictLane, foeDistToConflictFromJunctionEntry - foeInternalLaneLengthsBeforeCrossing);
+                //                // TO-DO: equip these with exit times to store relevant PET sections in encounter
+                //                eInfo.egoConflictEntryCrossSection = std::make_pair(egoConflictLane, egoDistToConflictFromJunctionEntry - egoInternalLaneLengthsBeforeCrossing);
+                //                eInfo.foeConflictEntryCrossSection = std::make_pair(foeConflictLane, foeDistToConflictFromJunctionEntry - foeInternalLaneLengthsBeforeCrossing);
 
                 // Take into account the lateral position for the exact determination of the conflict point
                 // whether lateral position increases or decreases conflict distance depends on lane angles at conflict
@@ -2278,6 +2403,7 @@ MSDevice_SSM::classifyEncounter(const FoeInfo* foeInfo, EncounterApproachInfo& e
     }
     return type;
 }
+
 
 
 const MSLane*
@@ -2418,10 +2544,10 @@ void
 MSDevice_SSM::flushConflicts(bool flushAll) {
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS)) {
-        std::cout << "\n" << SIMTIME << " Device '" << getID() << "' flushConflicts past=" << myPastConflicts.size() 
-            << " oldestActive=" << (myOldestActiveEncounterBegin == INVALID ? -1 : myOldestActiveEncounterBegin)
-            << " topBegin=" << (myPastConflicts.size() > 0 ? myPastConflicts.top()->begin : -1) 
-            << "\n";
+        std::cout << "\n" << SIMTIME << " Device '" << getID() << "' flushConflicts past=" << myPastConflicts.size()
+                  << " oldestActive=" << (myOldestActiveEncounterBegin == INVALID_DOUBLE ? -1 : myOldestActiveEncounterBegin)
+                  << " topBegin=" << (myPastConflicts.size() > 0 ? myPastConflicts.top()->begin : -1)
+                  << "\n";
     }
 #endif
     while (!myPastConflicts.empty()) {
@@ -2461,7 +2587,7 @@ MSDevice_SSM::flushGlobalMeasures() {
         }
 
         if (myComputeSGAP) {
-            myOutputFile->openTag("SGAPSpan").writeAttr("values", makeStringWithNAs(mySGAPspan, INVALID)).closeTag();
+            myOutputFile->openTag("SGAPSpan").writeAttr("values", makeStringWithNAs(mySGAPspan, INVALID_DOUBLE)).closeTag();
             if (myMinSGAP.second != "") {
                 if (myUseGeoCoords) {
                     toGeo(myMinSGAP.first.first.second);
@@ -2474,7 +2600,7 @@ MSDevice_SSM::flushGlobalMeasures() {
         }
 
         if (myComputeTGAP) {
-            myOutputFile->openTag("TGAPSpan").writeAttr("values", makeStringWithNAs(myTGAPspan, INVALID)).closeTag();
+            myOutputFile->openTag("TGAPSpan").writeAttr("values", makeStringWithNAs(myTGAPspan, INVALID_DOUBLE)).closeTag();
             if (myMinTGAP.second != "") {
                 if (myUseGeoCoords) {
                     toGeo(myMinTGAP.first.first.second);
@@ -2498,7 +2624,9 @@ MSDevice_SSM::toGeo(Position& x) {
 void
 MSDevice_SSM::toGeo(PositionVector& xv) {
     for (Position& x : xv) {
-        toGeo(x);
+        if (x != Position::INVALID) {
+            toGeo(x);
+        }
     }
 }
 
@@ -2531,14 +2659,14 @@ MSDevice_SSM::writeOutConflict(Encounter* e) {
         myOutputFile->openTag("foePosition").writeAttr("values", ::toString(e->foeTrajectory.x, myUseGeoCoords ? gPrecisionGeo : gPrecision)).closeTag();
         myOutputFile->openTag("foeVelocity").writeAttr("values", ::toString(e->foeTrajectory.v)).closeTag();
 
-        myOutputFile->openTag("conflictPoint").writeAttr("values", ::toString(e->conflictPointSpan, myUseGeoCoords ? gPrecisionGeo : gPrecision)).closeTag();
+        myOutputFile->openTag("conflictPoint").writeAttr("values", makeStringWithNAs(e->conflictPointSpan, myUseGeoCoords ? gPrecisionGeo : gPrecision)).closeTag();
     }
 
     if (myComputeTTC) {
         if (mySaveTrajectories) {
-            myOutputFile->openTag("TTCSpan").writeAttr("values", makeStringWithNAs(e->TTCspan, INVALID)).closeTag();
+            myOutputFile->openTag("TTCSpan").writeAttr("values", makeStringWithNAs(e->TTCspan, INVALID_DOUBLE)).closeTag();
         }
-        if (e->minTTC.time == INVALID) {
+        if (e->minTTC.time == INVALID_DOUBLE) {
             myOutputFile->openTag("minTTC").writeAttr("time", "NA").writeAttr("position", "NA").writeAttr("type", "NA").writeAttr("value", "NA").closeTag();
         } else {
             std::string time = ::toString(e->minTTC.time);
@@ -2553,9 +2681,9 @@ MSDevice_SSM::writeOutConflict(Encounter* e) {
     }
     if (myComputeDRAC) {
         if (mySaveTrajectories) {
-            myOutputFile->openTag("DRACSpan").writeAttr("values", makeStringWithNAs(e->DRACspan, {0.0, INVALID})).closeTag();
+            myOutputFile->openTag("DRACSpan").writeAttr("values", makeStringWithNAs(e->DRACspan, {0.0, INVALID_DOUBLE})).closeTag();
         }
-        if (e->maxDRAC.time == INVALID) {
+        if (e->maxDRAC.time == INVALID_DOUBLE) {
             myOutputFile->openTag("maxDRAC").writeAttr("time", "NA").writeAttr("position", "NA").writeAttr("type", "NA").writeAttr("value", "NA").closeTag();
         } else {
             std::string time = ::toString(e->maxDRAC.time);
@@ -2569,7 +2697,7 @@ MSDevice_SSM::writeOutConflict(Encounter* e) {
         }
     }
     if (myComputePET) {
-        if (e->PET.time == INVALID) {
+        if (e->PET.time == INVALID_DOUBLE) {
             myOutputFile->openTag("PET").writeAttr("time", "NA").writeAttr("position", "NA").writeAttr("type", "NA").writeAttr("value", "NA").closeTag();
         } else {
             std::string time = ::toString(e->PET.time);
@@ -2586,19 +2714,28 @@ MSDevice_SSM::writeOutConflict(Encounter* e) {
 }
 
 std::string
-MSDevice_SSM::makeStringWithNAs(std::vector<double> v, double NA, std::string sep) {
+MSDevice_SSM::makeStringWithNAs(const std::vector<double>& v, double NA) {
     std::string res = "";
     for (std::vector<double>::const_iterator i = v.begin(); i != v.end(); ++i) {
-        res += (i == v.begin() ? "" : sep) + (*i == NA ? "NA" : ::toString(*i));
+        res += (i == v.begin() ? "" : " ") + (*i == NA ? "NA" : ::toString(*i));
     }
     return res;
 }
 
 std::string
-MSDevice_SSM::makeStringWithNAs(std::vector<double> v, std::vector<double> NAs, std::string sep) {
+MSDevice_SSM::makeStringWithNAs(const std::vector<double>& v, const std::vector<double>& NAs) {
     std::string res = "";
     for (std::vector<double>::const_iterator i = v.begin(); i != v.end(); ++i) {
-        res += (i == v.begin() ? "" : sep) + (find(NAs.begin(), NAs.end(), *i) != NAs.end() ? "NA" : ::toString(*i));
+        res += (i == v.begin() ? "" : " ") + (find(NAs.begin(), NAs.end(), *i) != NAs.end() ? "NA" : ::toString(*i));
+    }
+    return res;
+}
+
+std::string
+MSDevice_SSM::makeStringWithNAs(const PositionVector& v, const int precision) {
+    std::string res = "";
+    for (PositionVector::const_iterator i = v.begin(); i != v.end(); ++i) {
+        res += (i == v.begin() ? "" : " ") + (*i == Position::INVALID ? "NA" : ::toString(*i, precision));
     }
     return res;
 }
@@ -2615,7 +2752,7 @@ MSDevice_SSM::MSDevice_SSM(SUMOVehicle& holder, const std::string& id, std::stri
     myRange(range),
     myExtraTime(extraTime),
     myUseGeoCoords(useGeoCoords),
-    myOldestActiveEncounterBegin(INVALID),
+    myOldestActiveEncounterBegin(INVALID_DOUBLE),
     myMaxBR(std::make_pair(-1, Position(0., 0.)), 0.0),
     myMinSGAP(std::make_pair(std::make_pair(-1, Position(0., 0.)), std::numeric_limits<double>::max()), ""),
     myMinTGAP(std::make_pair(std::make_pair(-1, Position(0., 0.)), std::numeric_limits<double>::max()), "") {
@@ -2642,7 +2779,7 @@ MSDevice_SSM::MSDevice_SSM(SUMOVehicle& holder, const std::string& id, std::stri
         createdOutputFiles.insert(outputFilename);
     }
     // register at static instance container
-    instances->insert(this);
+    myInstances->insert(this);
 
 #ifdef DEBUG_SSM
     if (DEBUG_COND(myHolderMS)) {
@@ -2665,7 +2802,7 @@ MSDevice_SSM::MSDevice_SSM(SUMOVehicle& holder, const std::string& id, std::stri
 MSDevice_SSM::~MSDevice_SSM() {
     // Deleted in ~BaseVehicle()
     // unregister from static instance container
-    instances->erase(this);
+    myInstances->erase(this);
     resetEncounters();
     flushConflicts(true);
     flushGlobalMeasures();
@@ -2717,13 +2854,14 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
         return;
     }
 #ifdef DEBUG_SSM_SURROUNDING
-    gDebugFlag3 = DEBUG_COND(&veh);
+
+    gDebugFlag3 = DEBUG_COND_FIND(veh);
     if (gDebugFlag3) {
         std::cout << SIMTIME << " Looking for surrounding vehicles for ego vehicle '" << veh.getID()
-            << "' on edge '" << veh.getLane()->getEdge().getID()
-            << "'."
-            << "\nVehicle's best lanes = " << ::toString(veh.getBestLanesContinuation())
-            << std::endl;
+                  << "' on edge '" << veh.getLane()->getEdge().getID()
+                  << "'."
+                  << "\nVehicle's best lanes = " << ::toString(veh.getBestLanesContinuation())
+                  << std::endl;
     }
 #endif
 
@@ -2743,7 +2881,7 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
     const bool isOpposite = veh.getLaneChangeModel().isOpposite();
     if (isOpposite) {
         for (int i = 0; i < (int)egoBestLanes.size(); i++) {
-            if (egoBestLanes[i]->getEdge().getOppositeEdge() != nullptr) {
+            if (egoBestLanes[i] != nullptr && egoBestLanes[i]->getEdge().getOppositeEdge() != nullptr) {
                 egoBestLanes[i] = egoBestLanes[i]->getEdge().getOppositeEdge()->getLanes().back();
             }
         }
@@ -2752,6 +2890,7 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
 
     // current lane in loop below
     const MSLane* lane = veh.getLane();
+    const MSEdge* egoEdge = &(lane->getEdge());
     assert(lane->isInternal() || lane == *laneIter);
     assert(lane != 0);
     // next non-internal lane on the route
@@ -2766,8 +2905,11 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
     double remainingDownstreamRange = range;
     // distToConflictLane is the distance of the ego vehicle to the start of the currently considered potential conflict lane (can be negative for its current lane)
     double distToConflictLane = isOpposite ? pos - veh.getLane()->getLength() : -pos;
-    // junctions that were encountered during downstream scan. Memorized to break search at re-scan in recurrent nets.
-    std::set<const MSJunction*> seenJunctions;
+
+    // remember already visited lanes (no matter whether internal or not) and junctions downstream along the route
+    std::set<const MSLane*> seenLanes;
+    std::set<const MSJunction*> routeJunctions;
+
     // Starting points for upstream scans to be executed after downstream scan is complete.
     // Holds pairs (starting edge, starting position on edge)
     std::vector<UpstreamScanStartInfo> upstreamScanStartPositions;
@@ -2780,17 +2922,18 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
         edge = &(lane->getEdge());
 
 #ifdef DEBUG_SSM_SURROUNDING
-    if (gDebugFlag3) {
-        std::cout << SIMTIME << " Vehicle '" << veh.getID() << "' is on internal edge " << edge->getID() << "'." << std::endl;
+        if (gDebugFlag3) {
+            std::cout << SIMTIME << " Vehicle '" << veh.getID() << "' is on internal edge " << edge->getID() << "'." << std::endl;
 //                  << "Previous edge of its route: '" << (*edgeIter)->getID() << "'" << std::endl;
-    }
+        }
 #endif
 
         assert(edge->getToJunction() == edge->getFromJunction());
 
         const MSJunction* junction = edge->getToJunction();
         // Collect vehicles on the junction
-        getVehiclesOnJunction(junction, distToConflictLane, lane, foeCollector);
+        getVehiclesOnJunction(junction, lane, distToConflictLane, lane, foeCollector, seenLanes);
+        routeJunctions.insert(junction);
 
         // Collect vehicles on incoming edges.
         // Note that this includes the previous edge on the ego vehicle's route.
@@ -2821,7 +2964,9 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
     } else {
         // Collect all vehicles in range behind ego vehicle
         edge = &(lane->getEdge());
-        upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, pos, range + veh.getLength(), distToConflictLane, lane));
+        double edgeLength = edge->getLength();
+        double startScanPos = std::min(pos + remainingDownstreamRange, edgeLength);
+        upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, startScanPos, std::max(0., startScanPos - pos + range + veh.getLength()), distToConflictLane, lane));
     }
 
     assert(lane != 0);
@@ -2831,26 +2976,31 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
     // Collect all vehicles on the traversed Edges and on incoming edges at junctions
     // and starting points for upstream vehicle collection strated below after downstream scan.
     while (remainingDownstreamRange > 0.) {
+
 #ifdef DEBUG_SSM_SURROUNDING
-    if (gDebugFlag3) {
-        std::cout << SIMTIME << " Scanning downstream for vehicle '" << veh.getID() << "' on lane '" << veh.getLane()->getID() << "', position=" << pos << ".\n"
-                  << "Considering edge '" << edge->getID() << "' Remaining downstream range = " << remainingDownstreamRange
-                  << "\nbestLanes=" << ::toString(egoBestLanes) << "\n"
-                  << std::endl;
-    }
+        if (gDebugFlag3) {
+            std::cout << SIMTIME << " Scanning downstream for vehicle '" << veh.getID() << "' on lane '" << veh.getLane()->getID() << "', position=" << pos << ".\n"
+                      << "Considering edge '" << edge->getID() << "' Remaining downstream range = " << remainingDownstreamRange
+                      << "\nbestLanes=" << ::toString(egoBestLanes) << "\n"
+                      << std::endl;
+        }
 #endif
         assert(!edge->isInternal());
         assert(!lane->isInternal());
         assert(pos == 0 || lane == veh.getLane());
         if (pos + remainingDownstreamRange < lane->getLength()) {
             // scan range ends on this lane
-        	upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, pos + remainingDownstreamRange, remainingDownstreamRange, distToConflictLane, lane));
+            if (edge->getID() != egoEdge->getID()) {
+                upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, pos + remainingDownstreamRange, remainingDownstreamRange, distToConflictLane, lane));
+            }
             // scanned required downstream range
             break;
         } else {
             // Also need to scan area that reaches beyond the lane
             // Collecting vehicles on non-internal edge ahead
-        	upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, edge->getLength(), edge->getLength() - pos, distToConflictLane, lane));
+            if (edge->getID() != egoEdge->getID()) {
+                upstreamScanStartPositions.push_back(UpstreamScanStartInfo(edge, edge->getLength(), edge->getLength() - pos, distToConflictLane, lane));
+            }
             // account for scanned distance on lane
             remainingDownstreamRange -= lane->getLength() - pos;
             distToConflictLane += lane->getLength();
@@ -2863,7 +3013,13 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
             // If the vehicle's best lanes go on, collect vehicles on the upcoming junction
             if (laneIter != egoBestLanes.end()) {
                 // Upcoming junction
-                const MSJunction* junction = lane->getEdge().getToJunction();
+                const MSJunction* junction;
+                if (isOpposite) {
+                    junction = lane->getOpposite()->getEdge().getToJunction();
+                } else {
+                    junction = lane->getEdge().getToJunction();
+                }
+
 
                 // Find connection for ego on the junction
                 nextNonInternalLane = *laneIter;
@@ -2882,26 +3038,38 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
                     // link without internal lane
                     lane = nextNonInternalLane;
                     edge = &(lane->getEdge());
-                    if (seenJunctions.count(junction) == 0) {
-                        seenJunctions.insert(junction);
+                    if (seenLanes.count(lane) == 0) {
+                        seenLanes.insert(lane);
                         continue;
                     } else {
                         break;
                     }
                 }
 
-                if (seenJunctions.count(junction) == 0) {
+                if (seenLanes.count(lane) == 0) {
                     // Collect vehicles on the junction, if it wasn't considered already
-                    getVehiclesOnJunction(junction, distToConflictLane, lane, foeCollector);
-                    seenJunctions.insert(junction);
+                    getVehiclesOnJunction(junction, lane, distToConflictLane, lane, foeCollector, seenLanes);
+                    routeJunctions.insert(junction);
+
                     // Collect vehicles on incoming edges (except the last edge, where we already collected). Use full range.
-                    const ConstMSEdgeVector& incoming = junction->getIncoming();
-                    for (ConstMSEdgeVector::const_iterator ei = incoming.begin(); ei != incoming.end(); ++ei) {
-                        if (*ei == edge || (*ei)->isInternal()) {
-                            continue;
+                    if (isOpposite) {
+                        const ConstMSEdgeVector& outgoing = junction->getOutgoing();
+                        for (ConstMSEdgeVector::const_iterator ei = outgoing.begin(); ei != outgoing.end(); ++ei) {
+                            if (*ei == edge || (*ei)->isInternal()) {
+                                continue;
+                            }
+                            upstreamScanStartPositions.push_back(UpstreamScanStartInfo(*ei, (*ei)->getLength(), range, distToConflictLane, lane));
                         }
-                    	upstreamScanStartPositions.push_back(UpstreamScanStartInfo(*ei, (*ei)->getLength(), range, distToConflictLane, lane));
+                    } else {
+                        const ConstMSEdgeVector& incoming = junction->getIncoming();
+                        for (ConstMSEdgeVector::const_iterator ei = incoming.begin(); ei != incoming.end(); ++ei) {
+                            if (*ei == edge || (*ei)->isInternal()) {
+                                continue;
+                            }
+                            upstreamScanStartPositions.push_back(UpstreamScanStartInfo(*ei, (*ei)->getLength(), range, distToConflictLane, lane));
+                        }
                     }
+
                     // account for scanned distance on junction
                     double linkLength = link->getInternalLengthsAfter();
                     remainingDownstreamRange -= linkLength;
@@ -2909,8 +3077,8 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
 #ifdef DEBUG_SSM_SURROUNDING
                     if (gDebugFlag3) {
                         std::cout << "    Downstream Scan for vehicle '" << veh.getID() << "' proceeded over junction '" << junction->getID()
-                            << "',\n    linkLength=" << linkLength << ", remainingDownstreamRange=" << remainingDownstreamRange
-                            << std::endl;
+                                  << "',\n    linkLength=" << linkLength << ", remainingDownstreamRange=" << remainingDownstreamRange
+                                  << std::endl;
                     }
 #endif
 
@@ -2920,9 +3088,9 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
                 } else {
 #ifdef DEBUG_SSM_SURROUNDING
                     if (gDebugFlag3) {
-                            std::cout << "    Downstream Scan for vehicle '" << veh.getID() << "' stops at junction '" << junction->getID()
-                            << "', which has already been scanned."
-                            << std::endl;
+                        std::cout << "    Downstream Scan for vehicle '" << veh.getID() << "' stops at lane '" << lane->getID()
+                                  << "', which has already been scanned."
+                                  << std::endl;
                     }
 #endif
                     break;
@@ -2933,10 +3101,22 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
             }
         }
     }
+    // add junction from the end of the route
+    routeJunctions.insert(lane->getEdge().getToJunction());
+
+
     // Scan upstream branches from collected starting points
     for (UpstreamScanStartInfo& i : upstreamScanStartPositions) {
-    	getUpstreamVehicles(i, foeCollector, seenJunctions);
+        getUpstreamVehicles(i, foeCollector, seenLanes, routeJunctions);
     }
+
+#ifdef DEBUG_SSM_SURROUNDING
+    if (gDebugFlag3) {
+        for (std::pair<const MSVehicle*, FoeInfo*> foeInfo : foeCollector) {
+            std::cout << "    foe " << foeInfo.first->getID() << " conflict at " << foeInfo.second->egoConflictLane->getID() << " egoDist " << foeInfo.second->egoDistToConflictLane << std::endl;
+        }
+    }
+#endif
 
     // remove ego vehicle
     foeCollector.erase(&veh);
@@ -2944,13 +3124,12 @@ MSDevice_SSM::findSurroundingVehicles(const MSVehicle& veh, double range, FoeInf
 }
 
 void
-MSDevice_SSM::getUpstreamVehicles(const UpstreamScanStartInfo& scanStart, FoeInfoMap& foeCollector, std::set<const MSJunction*>& seenJunctions) {
+MSDevice_SSM::getUpstreamVehicles(const UpstreamScanStartInfo& scanStart, FoeInfoMap& foeCollector, std::set<const MSLane*>& seenLanes, const std::set<const MSJunction*>& routeJunctions) {
 #ifdef DEBUG_SSM_SURROUNDING
     if (gDebugFlag3) {
         std::cout << SIMTIME << " getUpstreamVehicles() for edge '" << scanStart.edge->getID() << "'"
-            << " pos = " << scanStart.pos << " range = " << scanStart.range
-            << "\nFound vehicles:"
-            << std::endl;
+                  << " pos = " << scanStart.pos << " range = " << scanStart.range
+                  << std::endl;
     }
 #endif
     if (scanStart.range <= 0) {
@@ -2959,10 +3138,15 @@ MSDevice_SSM::getUpstreamVehicles(const UpstreamScanStartInfo& scanStart, FoeInf
 
     const std::vector<MSLane*>& lanes = scanStart.edge->getLanes();
     // Collect vehicles on the given edge with position in [pos-range,pos]
-    for (std::vector<MSLane*>::const_iterator li = lanes.begin(); li != lanes.end(); ++li) {
-        MSLane* lane = *li;
+    for (MSLane* lane : lanes) {
+        if (seenLanes.find(lane) != seenLanes.end()) {
+            return;
+        }
+        int foundCount = 0;
+
         const MSLane::VehCont& vehicles = lane->getVehiclesSecure();
         for (MSLane::VehCont::const_iterator vi = vehicles.begin(); vi != vehicles.end(); ++vi) {
+
             MSVehicle* veh = *vi;
             if (foeCollector.find(veh) != foeCollector.end()) {
                 // vehicle already recognized, earlier recognized conflict has priority
@@ -2970,19 +3154,31 @@ MSDevice_SSM::getUpstreamVehicles(const UpstreamScanStartInfo& scanStart, FoeInf
             }
             if (veh->getPositionOnLane() - veh->getLength() <= scanStart.pos && veh->getPositionOnLane() >= scanStart.pos - scanStart.range) {
 #ifdef DEBUG_SSM_SURROUNDING
-                if (gDebugFlag3) std::cout << veh->getID()  << "\n";
+                if (gDebugFlag3) {
+                    std::cout << "\t" << veh->getID() << "\n";
+                }
 #endif
                 FoeInfo* c = new FoeInfo(); // c is deleted in updateEncounter()
                 c->egoDistToConflictLane = scanStart.egoDistToConflictLane;
                 c->egoConflictLane = scanStart.egoConflictLane;
                 foeCollector[veh] = c;
+                foundCount++;
             }
         }
         lane->releaseVehicles();
+
+#ifdef DEBUG_SSM_SURROUNDING
+        if (gDebugFlag3 && foundCount > 0) {
+            std::cout << "\t" << lane->getID() << ": Found " << foundCount << "\n";
+        }
+#endif
+        seenLanes.insert(lane);
     }
 
 #ifdef DEBUG_SSM_SURROUNDING
-    if (gDebugFlag3) std::cout << std::endl;
+    if (gDebugFlag3) {
+        std::cout << std::endl;
+    }
 #endif
 
     // TODO: Gather vehicles from opposite direction. This should happen in any case, where opposite direction overtaking is possible.
@@ -2998,54 +3194,77 @@ MSDevice_SSM::getUpstreamVehicles(const UpstreamScanStartInfo& scanStart, FoeInf
 
     // Junction representing the origin of 'edge'
     const MSJunction* junction = scanStart.edge->getFromJunction();
-    if (seenJunctions.count(junction) == 0) {
-        // Collect vehicles from incoming edges of the junction
-        if (!scanStart.edge->isInternal()) {
-            // collect vehicles on preceding junction (for internal edges this is already done in caller,
-            // i.e. findSurroundingVehicles() or the recursive call from getUpstreamVehicles())
 
-            // Collect vehicles on the junction, if it wasn't considered already
-            getVehiclesOnJunction(junction, scanStart.egoDistToConflictLane, scanStart.egoConflictLane, foeCollector);
-            seenJunctions.insert(junction);
+    // stop if upstream search reaches the ego route
+    if (routeJunctions.find(junction) != routeJunctions.end()) {
+        return;
+    }
+
+    // Collect vehicles from incoming edges of the junction
+    int incomingEdgeCount = 0;
+    if (!scanStart.edge->isInternal()) {
+        // collect vehicles on preceding junction (for internal edges this is already done in caller,
+        // i.e. findSurroundingVehicles() or the recursive call from getUpstreamVehicles())
+
+        // Collect vehicles on the junction, if it wasn't considered already
+        // run vehicle collection for all incoming connections
+        const std::vector<MSLane*> internalLanes = junction->getInternalLanes();
+        for (MSLane* internalLane : internalLanes) {
+            if (internalLane->getEdge().getSuccessors()[0]->getID() == scanStart.edge->getID()) {
+                getVehiclesOnJunction(junction, internalLane, scanStart.egoDistToConflictLane, scanStart.egoConflictLane, foeCollector, seenLanes);
+                incomingEdgeCount++;
+            }
         }
-        // Collect vehicles from incoming edges from the junction representing the origin of 'edge'
+    }
+    // Collect vehicles from incoming edges from the junction representing the origin of 'edge'
+    if (incomingEdgeCount > 0) {
         const ConstMSEdgeVector& incoming = junction->getIncoming();
         for (ConstMSEdgeVector::const_iterator ei = incoming.begin(); ei != incoming.end(); ++ei) {
-            if ((*ei)->isInternal()) {
+            if ((*ei)->isInternal() || (*ei)->isCrossing()) {
                 continue;
             }
+            const std::vector<MSLane*> lanes = (*ei)->getLanes();
+            bool skip = false;
+            for (MSLane* lane : lanes) {
+                if (seenLanes.find(lane) != seenLanes.end()) {
+                    skip = true;
+                    break;
+                }
+            }
+            if (skip) {
+#ifdef DEBUG_SSM_SURROUNDING
+                //if (gDebugFlag3) std::cout << "Scan skips already seen edge " << (*ei)->getID() << "\n";
+#endif
+                continue;
+            }
+
             const MSEdge* inEdge = *ei;
             assert(inEdge != 0);
             double distOnJunction = scanStart.edge->isInternal() ? 0. : inEdge->getInternalFollowingLengthTo(scanStart.edge);
             if (distOnJunction >= remainingRange) {
+#ifdef DEBUG_SSM_SURROUNDING
+                //if (gDebugFlag3) std::cout << "Scan stops on junction (between " << inEdge->getID() << " and " << scanStart.edge->getID() << ") at rel. dist " << distOnJunction << "\n";
+#endif
                 continue;
             }
             // account for vehicles on the predecessor edge
             UpstreamScanStartInfo nextInfo(inEdge, inEdge->getLength(), remainingRange - distOnJunction, scanStart.egoDistToConflictLane, scanStart.egoConflictLane);
-            getUpstreamVehicles(nextInfo, foeCollector, seenJunctions);
+            getUpstreamVehicles(nextInfo, foeCollector, seenLanes, routeJunctions);
         }
-    } else {
-#ifdef DEBUG_SSM_SURROUNDING
-        if (gDebugFlag3) {
-            std::cout << "    Downstream Scan for stops at junction '" << junction->getID()
-                << "', which has already been scanned."
-                << std::endl;
-        }
-#endif
     }
 }
 
 void
-MSDevice_SSM::getVehiclesOnJunction(const MSJunction* junction, double egoDistToConflictLane, const MSLane* const egoConflictLane, FoeInfoMap& foeCollector) {
+MSDevice_SSM::getVehiclesOnJunction(const MSJunction* junction, const MSLane* const egoJunctionLane, double egoDistToConflictLane, const MSLane* const egoConflictLane, FoeInfoMap& foeCollector, std::set<const MSLane*>& seenLanes) {
 #ifdef DEBUG_SSM_SURROUNDING
     if (gDebugFlag3) {
         std::cout << SIMTIME << " getVehiclesOnJunction() for junction '" << junction->getID() << "'"
-            << "\nFound vehicles:"
-            << std::endl;
+                  << "\nFound vehicles:"
+                  << std::endl;
     }
 #endif
     // FoeInfo creation
-    auto collectFoeInfos = [&](const MSLane::VehCont& vehicles) {
+    auto collectFoeInfos = [&](const MSLane::VehCont & vehicles) {
         for (MSVehicle* veh : vehicles) {
             if (foeCollector.find(veh) != foeCollector.end()) {
                 delete foeCollector[veh];
@@ -3057,17 +3276,19 @@ MSDevice_SSM::getVehiclesOnJunction(const MSJunction* junction, double egoDistTo
 #ifdef DEBUG_SSM_SURROUNDING
             if (gDebugFlag3) {
                 for (MSVehicle* veh : vehicles) {
-                    std::cout << veh->getID() << "\n";
+                    std::cout << "\t" << veh->getID() << "\n";
                 }
             }
 #endif
         }
     };
 
-    // Collect vehicles on internal lanes
-    const std::vector<MSLane*> lanes = junction->getInternalLanes();
-    for (std::vector<MSLane*>::const_iterator li = lanes.begin(); li != lanes.end(); ++li) {
-        MSLane* lane = *li;
+    // stop condition
+    if (seenLanes.find(egoJunctionLane) != seenLanes.end() || egoJunctionLane->getEdge().isCrossing()) {
+        return;
+    }
+
+    auto scanInternalLane = [&](const MSLane * lane) {
         const MSLane::VehCont& vehicles = lane->getVehiclesSecure();
 
         // Add FoeInfos (XXX: for some situations, a vehicle may be collected twice. Then the later finding overwrites the earlier in foeCollector.
@@ -3075,6 +3296,22 @@ MSDevice_SSM::getVehiclesOnJunction(const MSJunction* junction, double egoDistTo
         collectFoeInfos(vehicles);
 
         lane->releaseVehicles();
+
+        // check additional internal link upstream in the same junction
+        // TODO: getEntryLink returns nullptr
+        if (lane->getCanonicalPredecessorLane()->isInternal()) {
+            lane = lane->getCanonicalPredecessorLane();
+
+            // This code must be modified, if more than two-piece internal lanes are allowed. Thus, assert:
+            assert(!lane->getEntryLink()->fromInternalLane());
+
+            // collect vehicles
+            const MSLane::VehCont& vehicles2 = lane->getVehiclesSecure();
+            // Add FoeInfos for the first internal lane
+            collectFoeInfos(vehicles2);
+            lane->releaseVehicles();
+        }
+
 
         // If there is an internal continuation lane, also collect vehicles on that lane
         if (lane->getLinkCont().size() > 1 && lane->getLinkCont()[0]->getViaLane() != nullptr) {
@@ -3089,17 +3326,35 @@ MSDevice_SSM::getVehiclesOnJunction(const MSJunction* junction, double egoDistTo
             collectFoeInfos(vehicles2);
             lane->releaseVehicles();
         }
+
+    };
+
+    // Collect vehicles on conflicting lanes
+    const MSLink* entryLink = egoJunctionLane->getEntryLink();
+    if (entryLink->getFoeLanes().size() > 0) {
+
+        const std::vector<MSLane*> foeLanes = junction->getFoeInternalLanes(entryLink);
+        for (MSLane* lane : foeLanes) {
+            if (seenLanes.find(lane) != seenLanes.end()) {
+                continue;
+            }
+            scanInternalLane(lane);
+            seenLanes.insert(lane);
+        }
     }
+    scanInternalLane(egoJunctionLane);
 
 #ifdef DEBUG_SSM_SURROUNDING
-    if (gDebugFlag3) std::cout << std::endl;
+    if (gDebugFlag3) {
+        std::cout << std::endl;
+    }
 #endif
 }
 
 
 
 void
-MSDevice_SSM::generateOutput() const {
+MSDevice_SSM::generateOutput(OutputDevice* /*tripinfoOut*/) const {
     // This is called once at vehicle removal.
     //       Also: flush myOutputFile? Or is this done automatically?
     // myOutputFile->closeTag();
@@ -3164,7 +3419,7 @@ MSDevice_SSM::useGeoCoords(const SUMOVehicle& v) {
 double
 MSDevice_SSM::getDetectionRange(const SUMOVehicle& v) {
     OptionsCont& oc = OptionsCont::getOptions();
-    double range = -INVALID;
+    double range = -INVALID_DOUBLE;
     if (v.getParameter().knowsParameter("device.ssm.range")) {
         try {
             range = StringUtils::toDouble(v.getParameter().getParameter("device.ssm.range", ""));
@@ -3191,7 +3446,7 @@ MSDevice_SSM::getDetectionRange(const SUMOVehicle& v) {
 double
 MSDevice_SSM::getExtraTime(const SUMOVehicle& v) {
     OptionsCont& oc = OptionsCont::getOptions();
-    double extraTime = INVALID;
+    double extraTime = INVALID_DOUBLE;
     if (v.getParameter().knowsParameter("device.ssm.extratime")) {
         try {
             extraTime = StringUtils::toDouble(v.getParameter().getParameter("device.ssm.extratime", ""));
@@ -3349,6 +3604,60 @@ MSDevice_SSM::getMeasuresAndThresholds(const SUMOVehicle& v, std::string deviceI
 }
 
 
+std::string
+MSDevice_SSM::getParameter(const std::string& key) const {
+    if (key == "minTTC" && !myComputeTTC) {
+        throw InvalidArgument("Measure TTC is not tracked by ssm device");
+    }
+    if (key == "maxDRAC" && !myComputeDRAC) {
+        throw InvalidArgument("Measure DRAC is not tracked by ssm device");
+    }
+    if (key == "minPET" && !myComputePET) {
+        throw InvalidArgument("Measure PET is not tracked by ssm device");
+    }
+    if (key == "minTTC" ||
+            key == "maxDRAC" ||
+            key == "minPET") {
+        double value = INVALID_DOUBLE;
+        double minTTC = INVALID_DOUBLE;
+        double minPET = INVALID_DOUBLE;
+        double maxDRAC = -INVALID_DOUBLE;
+        for (Encounter* e : myActiveEncounters) {
+            minTTC = MIN2(minTTC, e->minTTC.value);
+            minPET = MIN2(minPET, e->PET.value);
+            maxDRAC = MAX2(maxDRAC, e->maxDRAC.value);
+        }
+        if (key == "minTTC") {
+            value = minTTC;
+        } else if (key == "maxDRAC") {
+            value = maxDRAC;
+        } else if (key == "minPET") {
+            value = minPET;
+        }
+        if (fabs(value) == INVALID_DOUBLE) {
+            return "";
+        } else {
+            return toString(value);
+        }
+    }
+    throw InvalidArgument("Parameter '" + key + "' is not supported for device of type '" + deviceName() + "'");
+}
+
+
+void
+MSDevice_SSM::setParameter(const std::string& key, const std::string& value) {
+    double doubleValue;
+    try {
+        doubleValue = StringUtils::toDouble(value);
+    } catch (NumberFormatException&) {
+        throw InvalidArgument("Setting parameter '" + key + "' requires a number for device of type '" + deviceName() + "'");
+    }
+    if (false || key == "foo") {
+        UNUSED_PARAMETER(doubleValue);
+    } else {
+        throw InvalidArgument("Setting parameter '" + key + "' is not supported for device of type '" + deviceName() + "'");
+    }
+}
+
 
 /****************************************************************************/
-

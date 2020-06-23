@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2008-2019 German Aerospace Center (DLR) and others.
-# This program and the accompanying materials
-# are made available under the terms of the Eclipse Public License v2.0
-# which accompanies this distribution, and is available at
-# http://www.eclipse.org/legal/epl-v20.html
-# SPDX-License-Identifier: EPL-2.0
+# Copyright (C) 2008-2020 German Aerospace Center (DLR) and others.
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# https://www.eclipse.org/legal/epl-2.0/
+# This Source Code may also be made available under the following Secondary
+# Licenses when the conditions for such availability set forth in the Eclipse
+# Public License 2.0 are satisfied: GNU General Public License, version 2
+# or later which is available at
+# https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+# SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 
 # @file    _vehicletype.py
 # @author  Michael Behrisch
 # @author  Lena Kalleske
 # @date    2008-10-09
-# @version $Id$
 
 from __future__ import absolute_import
 from .domain import Domain
@@ -20,37 +23,13 @@ import struct
 from . import constants as tc
 from . import exceptions
 
-_RETURN_VALUE_FUNC = {tc.VAR_LENGTH: Storage.readDouble,
-                      tc.VAR_MAXSPEED: Storage.readDouble,
-                      tc.VAR_SPEED_FACTOR: Storage.readDouble,
-                      tc.VAR_SPEED_DEVIATION: Storage.readDouble,
-                      tc.VAR_ACCEL: Storage.readDouble,
-                      tc.VAR_DECEL: Storage.readDouble,
-                      tc.VAR_EMERGENCY_DECEL: Storage.readDouble,
-                      tc.VAR_APPARENT_DECEL: Storage.readDouble,
-                      tc.VAR_ACTIONSTEPLENGTH: Storage.readDouble,
-                      tc.VAR_IMPERFECTION: Storage.readDouble,
-                      tc.VAR_TAU: Storage.readDouble,
-                      tc.VAR_VEHICLECLASS: Storage.readString,
-                      tc.VAR_EMISSIONCLASS: Storage.readString,
-                      tc.VAR_SHAPECLASS: Storage.readString,
-                      tc.VAR_MINGAP: Storage.readDouble,
-                      tc.VAR_WIDTH: Storage.readDouble,
-                      tc.VAR_HEIGHT: Storage.readDouble,
-                      tc.VAR_MAXSPEED_LAT: Storage.readDouble,
-                      tc.VAR_MINGAP_LAT: Storage.readDouble,
-                      tc.VAR_LATALIGNMENT: Storage.readString,
-                      tc.VAR_PERSON_CAPACITY: Storage.readInt,
-                      tc.VAR_COLOR: lambda result: result.read("!BBBB")}
-
 
 class VehicleTypeDomain(Domain):
 
     def __init__(self):
         Domain.__init__(self, "vehicletype", tc.CMD_GET_VEHICLETYPE_VARIABLE, tc.CMD_SET_VEHICLETYPE_VARIABLE,
                         tc.CMD_SUBSCRIBE_VEHICLETYPE_VARIABLE, tc.RESPONSE_SUBSCRIBE_VEHICLETYPE_VARIABLE,
-                        tc.CMD_SUBSCRIBE_VEHICLETYPE_CONTEXT, tc.RESPONSE_SUBSCRIBE_VEHICLETYPE_CONTEXT,
-                        _RETURN_VALUE_FUNC)
+                        tc.CMD_SUBSCRIBE_VEHICLETYPE_CONTEXT, tc.RESPONSE_SUBSCRIBE_VEHICLETYPE_CONTEXT)
 
     def getLength(self, typeID):
         """getLength(string) -> double
@@ -394,6 +373,3 @@ class VehicleTypeDomain(Domain):
         """
         self._connection._sendStringCmd(
             tc.CMD_SET_VEHICLETYPE_VARIABLE, tc.COPY, origTypeID, newTypeID)
-
-
-VehicleTypeDomain()

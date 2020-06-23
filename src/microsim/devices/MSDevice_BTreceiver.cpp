@@ -1,25 +1,24 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2013-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2013-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSDevice_BTreceiver.cpp
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @author  Michael Behrisch
 /// @date    14.08.2013
-/// @version $Id$
 ///
 // A BT Receiver
 /****************************************************************************/
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <utils/common/MsgHandler.h>
@@ -133,17 +132,17 @@ MSDevice_BTreceiver::BTreceiverUpdate::execute(SUMOTime /*currentTime*/) {
         b.grow(vi->range);
         const float cmin[2] = {(float) b.xmin(), (float) b.ymin()};
         const float cmax[2] = {(float) b.xmax(), (float) b.ymax()};
-        std::set<std::string> surroundingVehicles;
+        std::set<const Named*> surroundingVehicles;
         Named::StoringVisitor sv(surroundingVehicles);
         rt.Search(cmin, cmax, sv);
 
         // loop over surrounding vehicles, check visibility status
-        for (std::set<std::string>::const_iterator j = surroundingVehicles.begin(); j != surroundingVehicles.end(); ++j) {
-            if ((*i).first == *j) {
+        for (const Named* vehicle : surroundingVehicles) {
+            if ((*i).first == vehicle->getID()) {
                 // seeing oneself? skip
                 continue;
             }
-            updateVisibility(*vi, *MSDevice_BTsender::sVehicles.find(*j)->second);
+            updateVisibility(*vi, *MSDevice_BTsender::sVehicles.find(vehicle->getID())->second);
         }
 
         if (vi->haveArrived) {
@@ -394,8 +393,9 @@ MSDevice_BTreceiver::notifyEnter(SUMOTrafficObject& veh, Notification reason, co
     if (reason == MSMoveReminder::NOTIFICATION_TELEPORT || reason == MSMoveReminder::NOTIFICATION_JUNCTION) {
         sVehicles[veh.getID()]->route.push_back(veh.getEdge());
     }
-    const MSVehicle& v = static_cast<MSVehicle&>(veh);
-    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(veh.getSpeed(), veh.getPosition(), v.getLane()->getID(), veh.getPositionOnLane(), v.getRoutePosition()));
+    const std::string location = MSGlobals::gUseMesoSim ? veh.getEdge()->getID() : static_cast<MSVehicle&>(veh).getLane()->getID();
+    const MSBaseVehicle& v = static_cast<MSBaseVehicle&>(veh);
+    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(veh.getSpeed(), veh.getPosition(), location, veh.getPositionOnLane(), v.getRoutePosition()));
     return true;
 }
 
@@ -406,8 +406,9 @@ MSDevice_BTreceiver::notifyMove(SUMOTrafficObject& veh, double /* oldPos */, dou
         WRITE_WARNING("btreceiver: Can not update position of vehicle '" + veh.getID() + "' which is not on the road.");
         return true;
     }
-    const MSVehicle& v = static_cast<MSVehicle&>(veh);
-    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(newSpeed, veh.getPosition(), v.getLane()->getID(), newPos, v.getRoutePosition()));
+    const std::string location = MSGlobals::gUseMesoSim ? veh.getEdge()->getID() : static_cast<MSVehicle&>(veh).getLane()->getID();
+    const MSBaseVehicle& v = static_cast<MSBaseVehicle&>(veh);
+    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(newSpeed, veh.getPosition(), location, newPos, v.getRoutePosition()));
     return true;
 }
 
@@ -421,8 +422,9 @@ MSDevice_BTreceiver::notifyLeave(SUMOTrafficObject& veh, double /* lastPos */, N
         WRITE_WARNING("btreceiver: Can not update position of vehicle '" + veh.getID() + "' which is not on the road.");
         return true;
     }
-    const MSVehicle& v = static_cast<MSVehicle&>(veh);
-    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(veh.getSpeed(), veh.getPosition(), v.getLane()->getID(), veh.getPositionOnLane(), v.getRoutePosition()));
+    const std::string location = MSGlobals::gUseMesoSim ? veh.getEdge()->getID() : static_cast<MSVehicle&>(veh).getLane()->getID();
+    const MSBaseVehicle& v = static_cast<MSBaseVehicle&>(veh);
+    sVehicles[veh.getID()]->updates.push_back(MSDevice_BTsender::VehicleState(veh.getSpeed(), veh.getPosition(), location, veh.getPositionOnLane(), v.getRoutePosition()));
     if (reason == MSMoveReminder::NOTIFICATION_TELEPORT) {
         sVehicles[veh.getID()]->amOnNet = false;
     }
@@ -434,8 +436,4 @@ MSDevice_BTreceiver::notifyLeave(SUMOTrafficObject& veh, double /* lastPos */, N
 }
 
 
-
-
-
 /****************************************************************************/
-

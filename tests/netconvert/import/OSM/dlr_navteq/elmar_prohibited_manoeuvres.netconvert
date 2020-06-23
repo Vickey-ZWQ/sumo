@@ -1,7 +1,7 @@
 # Format matches Extraction version: V6.5 
 # <?xml version="1.0" encoding="UTF-8"?>
 # 
-# <!-- generated on Wed Aug 15 14:52:45 2018 by Eclipse SUMO netconvert Version feccab3
+# <!-- generated on Mon Jan 13 14:49:33 2020 by Eclipse SUMO netconvert Version v1_4_0+0467-042e456
 # This data file and the accompanying materials
 # are made available under the terms of the Eclipse Public License v2.0
 # which accompanies this distribution, and is available at
@@ -20,6 +20,7 @@
 #         <output-file value="net.net.xml"/>
 #         <dlr-navteq-output value="elmar_output"/>
 #         <dlr-navteq.precision value="2"/>
+#         <output.street-names value="true"/>
 #         <output.original-names value="true"/>
 #     </output>
 # 
@@ -55,6 +56,7 @@
 #     <report>
 #         <verbose value="true"/>
 #         <xml-validation value="never"/>
+#         <aggregate-warnings value="5"/>
 #     </report>
 # 
 # </configuration>
@@ -65,3 +67,4 @@
 415852976	1	-1	1	100000000000	415852958	415852955
 415852977	1	-1	1	100000000000	224769559	415852919
 415852978	1	-1	1	100000000000	180239847	16942869
+415852979	1	-1	1	100000000000	415852908	415852909

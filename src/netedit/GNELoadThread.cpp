@@ -1,25 +1,23 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GNELoadThread.cpp
 /// @author  Jakob Erdmann
 /// @date    Feb 2011
-/// @version $Id$
 ///
 // The thread that performs the loading of a Netedit-net (adapted from
 // GUILoadThread)
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <netbuild/NBFrame.h>
 #include <netbuild/NBNetBuilder.h>
 #include <netimport/NIFrame.h>
@@ -81,6 +79,9 @@ GNELoadThread::run() {
             submitEndAndCleanup(net);
             return 0;
         }
+    }
+    if (oc.isDefault("aggregate-warnings")) {
+        oc.set("aggregate-warnings", "5");
     }
     MsgHandler::initOutputOptions();
     if (!(NIFrame::checkOptions() &&
@@ -213,6 +214,7 @@ GNELoadThread::fillOptions(OptionsCont& oc) {
     oc.addOptionSubTopic("Unregulated Nodes");
     oc.addOptionSubTopic("Junctions");
     oc.addOptionSubTopic("Pedestrian");
+    oc.addOptionSubTopic("Bicycle");
     oc.addOptionSubTopic("Railway");
     oc.addOptionSubTopic("Formats");
     oc.addOptionSubTopic("Netedit");
@@ -236,6 +238,13 @@ GNELoadThread::fillOptions(OptionsCont& oc) {
     oc.doRegister("demandelements-output", new Option_String());
     oc.addDescription("demandelements-output", "Netedit", "file in which demand elements must be saved");
 
+    oc.doRegister("data-files", 'd', new Option_FileName());
+    oc.addSynonyme("data-files", "data");
+    oc.addDescription("data-files", "Netedit", "Load data elements descriptions from FILE(s)");
+
+    oc.doRegister("dataelements-output", new Option_String());
+    oc.addDescription("dataelements-output", "Netedit", "file in which data elements must be saved");
+
     oc.doRegister("TLSPrograms-output", new Option_String());
     oc.addDescription("TLSPrograms-output", "Netedit", "file in which TLS Programs must be saved");
 
@@ -251,11 +260,13 @@ GNELoadThread::fillOptions(OptionsCont& oc) {
     oc.doRegister("registry-viewport", new Option_Bool(false));
     oc.addDescription("registry-viewport", "Visualisation", "Load current viewport from registry");
 
-    oc.doRegister("window-size", new Option_String());
+    oc.doRegister("window-size", new Option_StringVector());
     oc.addDescription("window-size", "Visualisation", "Create initial window with the given x,y size");
 
-    oc.doRegister("window-pos", new Option_String());
+    oc.doRegister("window-pos", new Option_StringVector());
     oc.addDescription("window-pos", "Visualisation", "Create initial window at the given x,y position");
+
+    // testing
 
     oc.doRegister("gui-testing", new Option_Bool(false));
     oc.addDescription("gui-testing", "Visualisation", "Enable overlay for screen recognition");
@@ -265,6 +276,9 @@ GNELoadThread::fillOptions(OptionsCont& oc) {
 
     oc.doRegister("gui-testing-debug-gl", new Option_Bool(false));
     oc.addDescription("gui-testing-debug-gl", "Visualisation", "Enable output messages during GUI-Testing specific of gl functions");
+
+    oc.doRegister("gui-testing.setting-output", new Option_FileName());
+    oc.addDescription("gui-testing.setting-output", "Visualisation", "Save gui settings in the given settings-output file");
 
     // register the simulation settings (needed for GNERouteHandler)
     oc.doRegister("begin", new Option_String("0", "TIME"));

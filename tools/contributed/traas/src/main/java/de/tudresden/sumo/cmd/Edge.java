@@ -1,19 +1,22 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2017-2019 German Aerospace Center (DLR) and others.
+// Copyright (C) 2017-2020 German Aerospace Center (DLR) and others.
 // TraaS module
 // Copyright (C) 2016-2017 Dresden University of Technology
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    Edge.java
 /// @author  Mario Krumnow
 /// @author  Evamarie Wiessner
 /// @date    2016
-/// @version $Id$
 ///
 //
 /****************************************************************************/
@@ -41,7 +44,7 @@ public class Edge {
      * @return the travel time value (in s)
      */
 
-    public static SumoCommand getAdaptedTraveltime(String edgeID, int time) {
+    public static SumoCommand getAdaptedTraveltime(String edgeID, double time) {
         Object[] array = new Object[] {time};
         return new SumoCommand(Constants.CMD_GET_EDGE_VARIABLE, Constants.VAR_EDGE_TRAVELTIME, edgeID, array, Constants.RESPONSE_GET_EDGE_VARIABLE, Constants.TYPE_DOUBLE);
     }
@@ -83,7 +86,7 @@ public class Edge {
      *         not exist
      */
 
-    public static SumoCommand getEffort(String edgeID, int time) {
+    public static SumoCommand getEffort(String edgeID, double time) {
         Object[] array = new Object[] {time};
         return new SumoCommand(Constants.CMD_GET_EDGE_VARIABLE, Constants.VAR_EDGE_EFFORT, edgeID, array, Constants.RESPONSE_GET_EDGE_VARIABLE, Constants.TYPE_DOUBLE);
     }
@@ -378,7 +381,7 @@ public class Edge {
      * @return SumoCommand
      */
 
-    public static SumoCommand adaptTraveltime(String edgeID, double time, int begin, int end) {
+    public static SumoCommand adaptTraveltime(String edgeID, double time, double begin, double end) {
         Object[] array = new Object[] {begin, end, time};
         return new SumoCommand(Constants.CMD_SET_EDGE_VARIABLE, Constants.VAR_EDGE_TRAVELTIME, edgeID, array);
     }
@@ -412,7 +415,7 @@ public class Edge {
      * @return SumoCommand
      */
 
-    public static SumoCommand setEffort(String edgeID, double effort, int begin, int end) {
+    public static SumoCommand setEffort(String edgeID, double effort, double begin, double end) {
         Object[] array = new Object[] {begin, end, effort};
         return new SumoCommand(Constants.CMD_SET_EDGE_VARIABLE, Constants.VAR_EDGE_EFFORT, edgeID, array);
     }

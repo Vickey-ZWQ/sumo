@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GUIBaseVehicle.cpp
 /// @author  Daniel Krajzewicz
@@ -13,15 +17,9 @@
 /// @author  Michael Behrisch
 /// @author  Laura Bieker-Walz
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // A MSVehicle extended by some values for usage within the gui
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <cmath>
@@ -29,6 +27,7 @@
 #include <string>
 #include <functional>
 #include <utils/common/StringUtils.h>
+#include <utils/common/StringTokenizer.h>
 #include <utils/geom/GeomHelper.h>
 #include <utils/vehicle/SUMOVehicleParameter.h>
 #include <utils/emissions/PollutantsInterface.h>
@@ -73,6 +72,8 @@ FXDEFMAP(GUIBaseVehicle::GUIBaseVehiclePopupMenu) GUIBaseVehiclePopupMenuMap[] =
     FXMAPFUNC(SEL_COMMAND, MID_HIDE_CURRENTROUTE, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideCurrentRoute),
     FXMAPFUNC(SEL_COMMAND, MID_SHOW_FUTUREROUTE, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowFutureRoute),
     FXMAPFUNC(SEL_COMMAND, MID_HIDE_FUTUREROUTE, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideFutureRoute),
+    FXMAPFUNC(SEL_COMMAND, MID_SHOW_ROUTE_NOLOOPS, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowRouteNoLoops),
+    FXMAPFUNC(SEL_COMMAND, MID_HIDE_ROUTE_NOLOOPS, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideRouteNoLoops),
     FXMAPFUNC(SEL_COMMAND, MID_SHOW_BEST_LANES, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowBestLanes),
     FXMAPFUNC(SEL_COMMAND, MID_HIDE_BEST_LANES, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideBestLanes),
     FXMAPFUNC(SEL_COMMAND, MID_START_TRACK, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdStartTrack),
@@ -81,6 +82,7 @@ FXDEFMAP(GUIBaseVehicle::GUIBaseVehiclePopupMenu) GUIBaseVehiclePopupMenuMap[] =
     FXMAPFUNC(SEL_COMMAND, MID_HIDE_LFLINKITEMS, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideLFLinkItems),
     FXMAPFUNC(SEL_COMMAND, MID_SHOW_FOES, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowFoes),
     FXMAPFUNC(SEL_COMMAND, MID_REMOVE_OBJECT, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdRemoveObject),
+    FXMAPFUNC(SEL_COMMAND, MID_TOGGLE_STOP, GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdToggleStop),
 };
 
 // Object implementation
@@ -93,9 +95,8 @@ FXIMPLEMENT(GUIBaseVehicle::GUIBaseVehiclePopupMenu, GUIGLObjectPopupMenu, GUIBa
  * GUIBaseVehicle::GUIBaseVehiclePopupMenu - methods
  * ----------------------------------------------------------------------- */
 GUIBaseVehicle::GUIBaseVehiclePopupMenu::GUIBaseVehiclePopupMenu(
-    GUIMainWindow& app, GUISUMOAbstractView& parent,
-    GUIGlObject& o, std::map<GUISUMOAbstractView*, int>& additionalVisualizations)
-    : GUIGLObjectPopupMenu(app, parent, o), myVehiclesAdditionalVisualizations(additionalVisualizations) {
+    GUIMainWindow& app, GUISUMOAbstractView& parent, GUIGlObject& o)
+    : GUIGLObjectPopupMenu(app, parent, o) {
 }
 
 
@@ -149,6 +150,23 @@ long
 GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideFutureRoute(FXObject*, FXSelector, void*) {
     assert(myObject->getType() == GLO_VEHICLE);
     static_cast<GUIBaseVehicle*>(myObject)->removeActiveAddVisualisation(myParent, VO_SHOW_FUTURE_ROUTE);
+    return 1;
+}
+
+
+long
+GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowRouteNoLoops(FXObject*, FXSelector, void*) {
+    assert(myObject->getType() == GLO_VEHICLE);
+    if (!static_cast<GUIBaseVehicle*>(myObject)->hasActiveAddVisualisation(myParent, VO_SHOW_ROUTE_NOLOOP)) {
+        static_cast<GUIBaseVehicle*>(myObject)->addActiveAddVisualisation(myParent, VO_SHOW_ROUTE_NOLOOP);
+    }
+    return 1;
+}
+
+long
+GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdHideRouteNoLoops(FXObject*, FXSelector, void*) {
+    assert(myObject->getType() == GLO_VEHICLE);
+    static_cast<GUIBaseVehicle*>(myObject)->removeActiveAddVisualisation(myParent, VO_SHOW_ROUTE_NOLOOP);
     return 1;
 }
 
@@ -213,19 +231,46 @@ GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdShowFoes(FXObject*, FXSelector, vo
 
 
 long
-GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdRemoveObject(FXObject*, FXSelector, void*){
+GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdRemoveObject(FXObject*, FXSelector, void*) {
     GUIBaseVehicle* baseVeh = static_cast<GUIBaseVehicle*>(myObject);
     MSVehicle* microVeh = dynamic_cast<MSVehicle*>(&baseVeh->myVehicle);
     if (microVeh != nullptr) {
-        microVeh->onRemovalFromNet(MSMoveReminder::NOTIFICATION_VAPORIZED);
+        microVeh->onRemovalFromNet(MSMoveReminder::NOTIFICATION_VAPORIZED_GUI);
         if (microVeh->getLane() != nullptr) {
-            microVeh->getLane()->removeVehicle(microVeh, MSMoveReminder::NOTIFICATION_VAPORIZED);
+            microVeh->getLane()->removeVehicle(microVeh, MSMoveReminder::NOTIFICATION_VAPORIZED_GUI);
         }
     } else {
         MEVehicle* mesoVeh = dynamic_cast<MEVehicle*>(&baseVeh->myVehicle);
-        MSGlobals::gMesoNet->vaporizeCar(mesoVeh);
+        MSGlobals::gMesoNet->vaporizeCar(mesoVeh, MSMoveReminder::NOTIFICATION_VAPORIZED_GUI);
     }
     MSNet::getInstance()->getVehicleControl().scheduleVehicleRemoval(&baseVeh->myVehicle);
+    myParent->update();
+    return 1;
+}
+
+
+long
+GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdToggleStop(FXObject*, FXSelector, void*) {
+    GUIBaseVehicle* baseVeh = static_cast<GUIBaseVehicle*>(myObject);
+    MSVehicle* microVeh = dynamic_cast<MSVehicle*>(&baseVeh->myVehicle);
+    if (microVeh != nullptr) {
+        if (microVeh->isStopped()) {
+            microVeh->resumeFromStopping();
+        } else {
+            std::string errorOut;
+            const double brakeGap = microVeh->getCarFollowModel().brakeGap(microVeh->getSpeed());
+            std::pair<const MSLane*, double> stopPos = microVeh->getLanePosAfterDist(brakeGap);
+            std::cout << " stopLane=" << Named::getIDSecure(stopPos.first) << " stopPos=" << stopPos.second << "\n";
+            if (stopPos.first != nullptr) {
+                microVeh->addTraciStop(stopPos.first, stopPos.second, stopPos.second + POSITION_EPS, TIME2STEPS(3600), -1, false, false, false, errorOut);
+                if (errorOut != "") {
+                    WRITE_WARNING(errorOut);
+                }
+            }
+        }
+    } else {
+        WRITE_WARNING("GUI-triggered stop not implemented for meso");
+    }
     myParent->update();
     return 1;
 }
@@ -237,31 +282,33 @@ GUIBaseVehicle::GUIBaseVehiclePopupMenu::onCmdRemoveObject(FXObject*, FXSelector
 
 GUIBaseVehicle::GUIBaseVehicle(MSBaseVehicle& vehicle) :
     GUIGlObject(GLO_VEHICLE, vehicle.getID()),
-    myVehicle(vehicle) {
+    myVehicle(vehicle),
+    myPopup(nullptr) {
     // as it is possible to show all vehicle routes, we have to store them... (bug [ 2519761 ])
     myRoutes = MSDevice_Vehroutes::buildVehicleDevices(myVehicle, myVehicle.myDevices, 5);
     myVehicle.myMoveReminders.push_back(std::make_pair(myRoutes, 0.));
-    mySeatPositions.push_back(Position(0, 0)); // ensure length 1
+    mySeatPositions.push_back(Seat()); // ensure length 1
+    myContainerPositions.push_back(Seat()); // ensure length 1
 }
 
 
 GUIBaseVehicle::~GUIBaseVehicle() {
     myLock.lock();
     for (std::map<GUISUMOAbstractView*, int>::iterator i = myAdditionalVisualizations.begin(); i != myAdditionalVisualizations.end(); ++i) {
-        if (i->first->getTrackedID() == getGlID()) {
-            i->first->stopTrack();
-        }
         while (i->first->removeAdditionalGLVisualisation(this));
     }
     myLock.unlock();
     delete myRoutes;
+    if (myPopup != nullptr) {
+        myPopup->getParentView()->destroyPopup();
+    }
 }
 
 
 GUIGLObjectPopupMenu*
 GUIBaseVehicle::getPopUpMenu(GUIMainWindow& app,
                              GUISUMOAbstractView& parent) {
-    GUIGLObjectPopupMenu* ret = new GUIBaseVehiclePopupMenu(app, parent, *this, myAdditionalVisualizations);
+    GUIGLObjectPopupMenu* ret = new GUIBaseVehiclePopupMenu(app, parent, *this);
     buildPopupHeader(ret, app);
     buildCenterPopupEntry(ret);
     buildNameCopyPopupEntry(ret);
@@ -282,6 +329,13 @@ GUIBaseVehicle::getPopUpMenu(GUIMainWindow& app,
     } else {
         new FXMenuCommand(ret, "Show All Routes", nullptr, ret, MID_SHOW_ALLROUTES);
     }
+    if (hasActiveAddVisualisation(&parent, VO_SHOW_ROUTE_NOLOOP)) {
+        FXMenuCheck* showLoops = new FXMenuCheck(ret, "Draw looped routes", ret, MID_HIDE_ROUTE_NOLOOPS);
+        showLoops->setCheck(false);
+    } else {
+        FXMenuCheck* showLoops = new FXMenuCheck(ret, "Draw looped routes", ret, MID_SHOW_ROUTE_NOLOOPS);
+        showLoops->setCheck(true);
+    }
     if (hasActiveAddVisualisation(&parent, VO_SHOW_BEST_LANES)) {
         new FXMenuCommand(ret, "Hide Best Lanes", nullptr, ret, MID_HIDE_BEST_LANES);
     } else {
@@ -300,7 +354,7 @@ GUIBaseVehicle::getPopUpMenu(GUIMainWindow& app,
     }
     new FXMenuCommand(ret, "Select Foes", nullptr, ret, MID_SHOW_FOES);
 
-    
+    new FXMenuCommand(ret, myVehicle.isStopped() ? "Abort stop" : "Stop", nullptr, ret, MID_TOGGLE_STOP);
     new FXMenuCommand(ret, "Remove", nullptr, ret, MID_REMOVE_OBJECT);
 
     new FXMenuSeparator(ret);
@@ -308,9 +362,14 @@ GUIBaseVehicle::getPopUpMenu(GUIMainWindow& app,
     buildShowParamsPopupEntry(ret, false);
     buildShowTypeParamsPopupEntry(ret);
     buildPositionCopyEntry(ret, false);
+    myPopup = ret;
     return ret;
 }
 
+void
+GUIBaseVehicle::removedPopupMenu() {
+    myPopup = nullptr;
+}
 
 Boundary
 GUIBaseVehicle::getCenteringBoundary() const {
@@ -343,7 +402,9 @@ GUIBaseVehicle::drawOnPos(const GUIVisualizationSettings& s, const Position& pos
     double upscaleLength = upscale;
     if (upscale > 1 && length > 5) {
         // reduce the length/width ratio because this is not usefull at high zoom
-        upscaleLength = MAX2(1.0, upscaleLength * (5 + sqrt(length - 5)) / length);
+        const double widthLengthFactor = length / getVType().getWidth();
+        const double shrinkFactor = MIN2(widthLengthFactor, sqrt(upscaleLength));
+        upscaleLength /= shrinkFactor;
     }
     glScaled(upscale, upscaleLength, 1);
     /*
@@ -493,13 +554,30 @@ GUIBaseVehicle::drawOnPos(const GUIVisualizationSettings& s, const Position& pos
         const double value = getColorValue(s, s.vehicleColorer.getActive());
         GLHelper::drawTextSettings(s.vehicleValue, toString(value), Position(0, 0), s.scale, s.angle);
     }
+    if (s.vehicleText.show) {
+        const std::string& value = myVehicle.getParameter().getParameter(s.vehicleTextParam, "");
+        if (value != "") {
+            auto lines = StringTokenizer(value, StringTokenizer::NEWLINE).getVector();
+            glRotated(-s.angle, 0, 0, 1);
+            glTranslated(0, 0.7 * s.vehicleText.scaledSize(s.scale) * lines.size(), 0);
+            glRotated(s.angle, 0, 0, 1);
+            for (std::string& line : lines) {
+                GLHelper::drawTextSettings(s.vehicleText, line, Position(0, 0), s.scale, s.angle);
+                glRotated(-s.angle, 0, 0, 1);
+                glTranslated(0, -0.7 * s.vehicleText.scaledSize(s.scale), 0);
+                glRotated(s.angle, 0, 0, 1);
+            }
+        }
+    }
 
     if (!drawCarriages) {
         mySeatPositions.clear();
-        int requiredSeats = getNumPassengers() + getNumContainers();
-        const int totalSeats = getVType().getPersonCapacity() + getVType().getContainerCapacity();
+        myContainerPositions.clear();
+        int requiredSeats = getNumPassengers();
+        int requiredContainerPostions = getNumContainers();
         const Position back = (p1 + Position(-length * upscaleLength, 0)).rotateAround2D(angle, p1);
-        computeSeats(p1, back, totalSeats, upscale, requiredSeats);
+        computeSeats(p1, back, SUMO_const_waitingPersonWidth, getVType().getPersonCapacity(), upscale, requiredSeats, mySeatPositions);
+        computeSeats(p1, back, SUMO_const_waitingContainerWidth, getVType().getContainerCapacity(), upscale, requiredContainerPostions, myContainerPositions);
     }
 
     glPopMatrix();
@@ -525,11 +603,12 @@ GUIBaseVehicle::drawGLAdditional(GUISUMOAbstractView* const parent, const GUIVis
     if (hasActiveAddVisualisation(parent, VO_SHOW_BEST_LANES)) {
         drawBestLanes();
     }
+    bool noLoop = hasActiveAddVisualisation(parent, VO_SHOW_ROUTE_NOLOOP);
     if (hasActiveAddVisualisation(parent, VO_SHOW_ROUTE)) {
-        drawRoute(s, 0, 0.25, false);
+        drawRoute(s, 0, 0.25, false, noLoop);
     }
     if (hasActiveAddVisualisation(parent, VO_SHOW_FUTURE_ROUTE)) {
-        drawRoute(s, 0, 0.25, true);
+        drawRoute(s, 0, 0.25, true, noLoop);
     }
     if (hasActiveAddVisualisation(parent, VO_SHOW_ALL_ROUTES)) {
         if (myVehicle.getNumberReroutes() > 0) {
@@ -539,7 +618,7 @@ GUIBaseVehicle::drawGLAdditional(GUISUMOAbstractView* const parent, const GUIVis
                 drawRoute(s, i, darken);
             }
         } else {
-            drawRoute(s, 0, 0.25);
+            drawRoute(s, 0, 0.25, false, noLoop);
         }
     }
     if (hasActiveAddVisualisation(parent, VO_SHOW_LFLINKITEMS)) {
@@ -560,65 +639,68 @@ GUIBaseVehicle::drawLinkItem(const Position& pos, SUMOTime arrivalTime, SUMOTime
 }
 
 
-void
+RGBColor
 GUIBaseVehicle::setColor(const GUIVisualizationSettings& s) const {
+    RGBColor col;
     const GUIColorer& c = s.vehicleColorer;
-    if (!setFunctionalColor(c.getActive(), &myVehicle)) {
-        GLHelper::setColor(c.getScheme().getColor(getColorValue(s, c.getActive())));
+    if (!setFunctionalColor(c.getActive(), &myVehicle, col)) {
+        col = c.getScheme().getColor(getColorValue(s, c.getActive()));
     }
+    GLHelper::setColor(col);
+    return col;
 }
 
 
 bool
-GUIBaseVehicle::setFunctionalColor(int activeScheme, const MSBaseVehicle* veh) {
+GUIBaseVehicle::setFunctionalColor(int activeScheme, const MSBaseVehicle* veh, RGBColor& col) {
     switch (activeScheme) {
         case 0: {
             //test for emergency vehicle
             if (veh->getVehicleType().getGuiShape() == SVS_EMERGENCY) {
-                GLHelper::setColor(RGBColor::WHITE);
+                col = RGBColor::WHITE;
                 return true;
             }
             //test for firebrigade
             if (veh->getVehicleType().getGuiShape() == SVS_FIREBRIGADE) {
-                GLHelper::setColor(RGBColor::RED);
+                col = RGBColor::RED;
                 return true;
             }
             //test for police car
             if (veh->getVehicleType().getGuiShape() == SVS_POLICE) {
-                GLHelper::setColor(RGBColor::BLUE);
+                col = RGBColor::BLUE;
                 return true;
             }
             if (veh->getParameter().wasSet(VEHPARS_COLOR_SET)) {
-                GLHelper::setColor(veh->getParameter().color);
+                col = veh->getParameter().color;
                 return true;
             }
             if (veh->getVehicleType().wasSet(VTYPEPARS_COLOR_SET)) {
-                GLHelper::setColor(veh->getVehicleType().getColor());
+                col = veh->getVehicleType().getColor();
                 return true;
             }
             if (&(veh->getRoute().getColor()) != &RGBColor::DEFAULT_COLOR) {
-                GLHelper::setColor(veh->getRoute().getColor());
+                col = veh->getRoute().getColor();
                 return true;
             }
             return false;
         }
         case 2: {
             if (veh->getParameter().wasSet(VEHPARS_COLOR_SET)) {
-                GLHelper::setColor(veh->getParameter().color);
+                col = veh->getParameter().color;
                 return true;
             }
             return false;
         }
         case 3: {
             if (veh->getVehicleType().wasSet(VTYPEPARS_COLOR_SET)) {
-                GLHelper::setColor(veh->getVehicleType().getColor());
+                col = veh->getVehicleType().getColor();
                 return true;
             }
             return false;
         }
         case 4: {
             if (&(veh->getRoute().getColor()) != &RGBColor::DEFAULT_COLOR) {
-                GLHelper::setColor(veh->getRoute().getColor());
+                col = veh->getRoute().getColor();
                 return true;
             }
             return false;
@@ -629,7 +711,7 @@ GUIBaseVehicle::setFunctionalColor(int activeScheme, const MSBaseVehicle* veh) {
             Position center = b.getCenter();
             double hue = 180. + atan2(center.x() - p.x(), center.y() - p.y()) * 180. / M_PI;
             double sat = p.distanceTo(center) / center.distanceTo(Position(b.xmin(), b.ymin()));
-            GLHelper::setColor(RGBColor::fromHSV(hue, sat, 1.));
+            col = RGBColor::fromHSV(hue, sat, 1.);
             return true;
         }
         case 6: {
@@ -638,7 +720,7 @@ GUIBaseVehicle::setFunctionalColor(int activeScheme, const MSBaseVehicle* veh) {
             Position center = b.getCenter();
             double hue = 180. + atan2(center.x() - p.x(), center.y() - p.y()) * 180. / M_PI;
             double sat = p.distanceTo(center) / center.distanceTo(Position(b.xmin(), b.ymin()));
-            GLHelper::setColor(RGBColor::fromHSV(hue, sat, 1.));
+            col = RGBColor::fromHSV(hue, sat, 1.);
             return true;
         }
         case 7: {
@@ -649,14 +731,19 @@ GUIBaseVehicle::setFunctionalColor(int activeScheme, const MSBaseVehicle* veh) {
             Position minp(b.xmin(), b.ymin());
             Position maxp(b.xmax(), b.ymax());
             double sat = pb.distanceTo(pe) / minp.distanceTo(maxp);
-            GLHelper::setColor(RGBColor::fromHSV(hue, sat, 1.));
+            col = RGBColor::fromHSV(hue, sat, 1.);
             return true;
         }
-        case 30: { // color randomly (by pointer hash)
+        case 32: { // color randomly (by pointer hash)
             std::hash<const MSBaseVehicle*> ptr_hash;
             const double hue = (double)(ptr_hash(veh) % 360); // [0-360]
             const double sat = ((ptr_hash(veh) / 360) % 67) / 100.0 + 0.33; // [0.33-1]
-            GLHelper::setColor(RGBColor::fromHSV(hue, sat, 1.));
+            col = RGBColor::fromHSV(hue, sat, 1.);
+            return true;
+        }
+        case 33: { // color by angle
+            double hue = GeomHelper::naviDegree(veh->getAngle());
+            col = RGBColor::fromHSV(hue, 1., 1.);
             return true;
         }
     }
@@ -684,48 +771,38 @@ GUIBaseVehicle::addActiveAddVisualisation(GUISUMOAbstractView* const parent, int
 void
 GUIBaseVehicle::removeActiveAddVisualisation(GUISUMOAbstractView* const parent, int which) {
     myAdditionalVisualizations[parent] &= ~which;
+    if (myAdditionalVisualizations[parent] == 0) {
+        myAdditionalVisualizations.erase(parent);
+    }
     parent->removeAdditionalGLVisualisation(this);
 }
 
 
 void
-GUIBaseVehicle::drawRoute(const GUIVisualizationSettings& s, int routeNo, double darken, bool future) const {
-    setColor(s);
-    GLdouble colors[4];
-    glGetDoublev(GL_CURRENT_COLOR, colors);
-    colors[0] -= darken;
-    if (colors[0] < 0) {
-        colors[0] = 0;
-    }
-    colors[1] -= darken;
-    if (colors[1] < 0) {
-        colors[1] = 0;
-    }
-    colors[2] -= darken;
-    if (colors[2] < 0) {
-        colors[2] = 0;
-    }
-    colors[3] -= darken;
-    if (colors[3] < 0) {
-        colors[3] = 0;
-    }
-    glColor3dv(colors);
+GUIBaseVehicle::drawRoute(const GUIVisualizationSettings& s, int routeNo, double darken, bool future, bool noLoop) const {
+    RGBColor darker = setColor(s).changedBrightness((int)(darken * -255));
+    GLHelper::setColor(darker);
     if (routeNo == 0) {
-        drawRouteHelper(s, myVehicle.getRoute(), future);
+        drawRouteHelper(s, myVehicle.getRoute(), future, noLoop, darker);
         return;
     }
-    --routeNo; // only prior routes are stored
-    const MSRoute* route = myRoutes->getRoute(routeNo);
+    const MSRoute* route = myRoutes->getRoute(routeNo - 1); // only prior routes are stored
     if (route != nullptr) {
-        drawRouteHelper(s, *route, future);
+        drawRouteHelper(s, *route, future, noLoop, darker);
     }
 }
 
 
-const Position&
+const GUIBaseVehicle::Seat&
 GUIBaseVehicle::getSeatPosition(int personIndex) const {
     /// if there are not enough seats in the vehicle people have to squeeze onto the last seat
     return mySeatPositions[MIN2(personIndex, (int)mySeatPositions.size() - 1)];
+}
+
+const GUIBaseVehicle::Seat&
+GUIBaseVehicle::getContainerPosition(int containerIndex) const {
+    /// if there are not enough positions in the vehicle containers have to squeeze onto the last position
+    return myContainerPositions[MIN2(containerIndex, (int)myContainerPositions.size() - 1)];
 }
 
 
@@ -747,7 +824,7 @@ GUIBaseVehicle::drawAction_drawPersonsAndContainers(const GUIVisualizationSettin
         for (std::vector<MSTransportable*>::const_iterator i = cs.begin(); i != cs.end(); ++i) {
             GUIContainer* container = dynamic_cast<GUIContainer*>(*i);
             assert(container != 0);
-            container->setPositionInVehicle(getSeatPosition(containerIndex++));
+            container->setPositionInVehicle(getContainerPosition(containerIndex++));
             container->drawGL(s);
         }
     }
@@ -802,30 +879,40 @@ GUIBaseVehicle::getNumContainers() const {
     return 0;
 }
 
+std::string
+GUIBaseVehicle::getDeviceDescription() {
+    std::vector<std::string> devs;
+    for (MSDevice* d : myVehicle.getDevices()) {
+        devs.push_back(d->deviceName());
+    }
+    return joinToString(devs, " ");
+}
+
 
 void
-GUIBaseVehicle::computeSeats(const Position& front, const Position& back, int maxSeats, double exaggeration, int& requiredSeats) const {
+GUIBaseVehicle::computeSeats(const Position& front, const Position& back, double seatOffset, int maxSeats, double exaggeration, int& requiredSeats, Seats& into) const {
     if (requiredSeats <= 0) {
-        return; // save some work
+        return;
     }
+    maxSeats = MAX2(maxSeats, 1); // compute at least one seat
+    seatOffset *= exaggeration;
     const double vehWidth = getVType().getWidth() * exaggeration;
     const double length = front.distanceTo2D(back);
-    const double seatOffset = SUMO_const_waitingPersonWidth * exaggeration;
     const int rowSize = MAX2(1, (int)floor(vehWidth / seatOffset));
     const double rowOffset = (length - 1) / ceil((double)maxSeats / rowSize);
-    const double sideOffset = (rowSize - 1) / 2 * seatOffset;
+    const double sideOffset = (rowSize - 1) / 2.0 * seatOffset;
     double rowPos = 1 - rowOffset;
+    double angle = back.angleTo2D(front);
+    //if (myVehicle.getID() == "v0") std::cout << SIMTIME << " seatOffset=" << seatOffset << " max=" << maxSeats << " ex=" << exaggeration << " req=" << requiredSeats << " rowSize=" << rowSize << " sideOffset=" << sideOffset << " front=" << front << " back=" << back << " a=" << angle << " da=" << RAD2DEG(angle) << "\n";
     for (int i = 0; requiredSeats > 0 && i < maxSeats; i++) {
         int seat = (i % rowSize);
         if (seat == 0) {
             rowPos += rowOffset;
         }
-        mySeatPositions.push_back(PositionVector::positionAtOffset2D(front, back, rowPos,
-                                  seat * seatOffset - sideOffset));
+        into.push_back(Seat(PositionVector::positionAtOffset2D(front, back, rowPos, seat * seatOffset - sideOffset), angle));
         requiredSeats--;
     }
 }
-
 
 
 /****************************************************************************/

@@ -1,10 +1,11 @@
-[![Linux and MacOS Build Status](https://travis-ci.org/eclipse/sumo.svg?branch=master)](https://travis-ci.org/eclipse/sumo)
-[![Windows Build status](https://ci.appveyor.com/api/projects/status/github/eclipse/sumo?svg=true)](https://ci.appveyor.com/project/eclipsewebmaster/sumo)
-![Repo Size](https://img.shields.io/github/repo-size/eclipse/sumo.svg)
-
+<a href="https://sumo.dlr.de/docs"><p align="center"><img width=50% src="https://github.com/eclipse/sumo/blob/master/docs/web/docs/images/sumo-logo.svg"></p></a>
 
 Eclipse SUMO - Simulation of Urban MObility 
 ===========================================
+
+![Windows, Linux and MacOS Build Status](https://github.com/eclipse/sumo/workflows/build/badge.svg)
+[![Windows Build status](https://ci.appveyor.com/api/projects/status/github/eclipse/sumo?svg=true)](https://ci.appveyor.com/project/eclipsewebmaster/sumo)
+![Repo Size](https://img.shields.io/github/repo-size/eclipse/sumo.svg)
 
 What is SUMO
 ------------
@@ -20,7 +21,7 @@ at the German Aerospace Center](https://www.dlr.de/ts).
 Where to get it
 ---------------
 
-You can download SUMO via our [downloads site](https://sumo.dlr.de/wiki/Downloads).
+You can download SUMO via our [downloads site](https://sumo.dlr.de/docs/Downloads.html).
 
 As the program is still under development and is extended continuously, we advice you to
 use the latest sources from our GitHub repository. Using a command line client
@@ -37,7 +38,7 @@ To stay informed, we have a mailing list for SUMO
 Messages to the list can be sent to sumo-user@eclipse.org.
 SUMO announcements will be made through the sumo-announce@eclipse.org list;
 [you can subscribe](https://dev.eclipse.org/mailman/listinfo/sumo-announce) to as well.
-For further contact information have a look at the [wiki page](https://sumo.dlr.de/wiki/Contact).
+For further contact information have a look at the [this page](https://sumo.dlr.de/docs/Contact.html).
 
 
 Build and Installation
@@ -50,7 +51,7 @@ If you want to develop under Windows, please also clone the dependent libraries 
 
 Using Linux you should have a look whether your distribution already contains sumo.
 There is also a [ppa for ubuntu users](https://launchpad.net/~sumo) and an
-[open build service instance](https://build.opensuse.org/project/show?project=home%3Abehrisch).
+[open build service instance](https://build.opensuse.org/project/show/home:behrisch).
 If you want to build yourself, the steps for ubuntu are:
 
         sudo apt-get install cmake python g++ libxerces-c-dev libfox-1.6-dev libgdal-dev libproj-dev libgl2ps-dev swig
@@ -60,7 +61,7 @@ If you want to build yourself, the steps for ubuntu are:
         cmake ../..
         make -j$(nproc)
 
-For [detailed build instructions have a look at our wiki](https://sumo.dlr.de/wiki/Developer/Main#Build_instructions).
+For [detailed build instructions have a look at our Documentation](https://sumo.dlr.de/docs/Developer/Main.html#build_instructions).
 
 
 Getting started
@@ -88,4 +89,4 @@ License
 
 SUMO is licensed under the [Eclipse Public License Version 2](https://eclipse.org/legal/epl-v20.html).
 For the licenses of the different libraries and supplementary code information is in the
-subdirectories and the [wiki](https://sumo.dlr.de/wiki/License).
+subdirectories and the [Documentation](https://sumo.dlr.de/docs/Libraries_Licenses.html).

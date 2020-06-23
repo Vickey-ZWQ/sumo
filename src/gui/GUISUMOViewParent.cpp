@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GUISUMOViewParent.cpp
 /// @author  Daniel Krajzewicz
@@ -14,15 +18,9 @@
 /// @author  Laura Bieker
 /// @author  Andreas Gaubatz
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // A single child window which contains a view of the simulation area
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <string>
@@ -41,6 +39,7 @@
 #include <utils/gui/images/GUIIconSubSys.h>
 #include <utils/gui/div/GUIGlobalSelection.h>
 #include <utils/gui/div/GUIIOGlobals.h>
+#include <utils/gui/div/GUIDesigns.h>
 #include <utils/gui/windows/GUIAppEnum.h>
 #include <utils/gui/windows/GUIDialog_GLObjChooser.h>
 #include <guisim/GUIVehicle.h>
@@ -63,6 +62,7 @@
 #include <osgview/GUIOSGView.h>
 #endif
 
+#define SPEEDFACTOR_SCALE 100.0
 
 // ===========================================================================
 // FOX callback mapping
@@ -78,6 +78,8 @@ FXDEFMAP(GUISUMOViewParent) GUISUMOViewParentMap[] = {
     FXMAPFUNC(SEL_COMMAND,  MID_LOCATEADD,      GUISUMOViewParent::onCmdLocate),
     FXMAPFUNC(SEL_COMMAND,  MID_LOCATEPOI,      GUISUMOViewParent::onCmdLocate),
     FXMAPFUNC(SEL_COMMAND,  MID_LOCATEPOLY,     GUISUMOViewParent::onCmdLocate),
+    FXMAPFUNC(SEL_UPDATE,   MID_SPEEDFACTOR,    GUISUMOViewParent::onUpdSpeedFactor),
+    FXMAPFUNC(SEL_COMMAND,  MID_SPEEDFACTOR,    GUISUMOViewParent::onCmdSpeedFactor),
     FXMAPFUNC(SEL_COMMAND,  MID_SIMSTEP,        GUISUMOViewParent::onSimStep),
 
 };
@@ -95,6 +97,7 @@ GUISUMOViewParent::GUISUMOViewParent(FXMDIClient* p, FXMDIMenu* mdimenu,
                                      FXIcon* ic, FXuint opts,
                                      FXint x, FXint y, FXint w, FXint h) :
     GUIGlChildWindow(p, parentWindow, mdimenu, name, nullptr, ic, opts, x, y, w, h) {
+    buildSpeedControlToolbar();
     myParent->addGLChild(this);
 }
 
@@ -112,7 +115,7 @@ GUISUMOViewParent::init(FXGLCanvas* share, GUINet& net, GUISUMOViewParent::ViewT
             break;
 #endif
     }
-    myView->buildViewToolBars(*this);
+    myView->buildViewToolBars(this);
     if (myParent->isGaming()) {
         myStaticNavigationToolBar->hide();
     }
@@ -137,41 +140,44 @@ GUISUMOViewParent::setToolBarVisibility(const bool value) {
 
 long
 GUISUMOViewParent::onCmdMakeSnapshot(FXObject* sender, FXSelector, void*) {
-    MFXCheckableButton* button = static_cast<MFXCheckableButton*>(sender);
-    if (button->amChecked()) {
-        myView->endSnapshot();
-        button->setChecked(false);
-        return 1;
-    }
-    // get the new file name
-    FXFileDialog opendialog(this, "Save Snapshot");
-    opendialog.setIcon(GUIIconSubSys::getIcon(ICON_EMPTY));
-    opendialog.setSelectMode(SELECTFILE_ANY);
+    MFXCheckableButton* button = dynamic_cast<MFXCheckableButton*>(sender);
+    // check if cast was sucesfully
+    if (button) {
+        if (button->amChecked()) {
+            myView->endSnapshot();
+            button->setChecked(false);
+            return 1;
+        }
+        // get the new file name
+        FXFileDialog opendialog(this, "Save Snapshot");
+        opendialog.setIcon(GUIIconSubSys::getIcon(GUIIcon::EMPTY));
+        opendialog.setSelectMode(SELECTFILE_ANY);
 #ifdef HAVE_FFMPEG
-    opendialog.setPatternList("All Image and Video Files (*.gif,*.bmp,*.xpm,*.pcx,*.ico,*.rgb,*.xbm,*.tga,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.ps,*.eps,*.pdf,*.svg,*.tex,*.pgf,*.h264,*.hevc)\n"
-                              "All Video Files (*.h264,*.hevc)\n"
+        opendialog.setPatternList("All Image and Video Files (*.gif,*.bmp,*.xpm,*.pcx,*.ico,*.rgb,*.xbm,*.tga,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.ps,*.eps,*.pdf,*.svg,*.tex,*.pgf,*.h264,*.hevc)\n"
+                                  "All Video Files (*.h264,*.hevc)\n"
 #else
-    opendialog.setPatternList("All Image Files (*.gif,*.bmp,*.xpm,*.pcx,*.ico,*.rgb,*.xbm,*.tga,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.ps,*.eps,*.pdf,*.svg,*.tex,*.pgf)\n"
+        opendialog.setPatternList("All Image Files (*.gif,*.bmp,*.xpm,*.pcx,*.ico,*.rgb,*.xbm,*.tga,*.png,*.jpg,*.jpeg,*.tif,*.tiff,*.ps,*.eps,*.pdf,*.svg,*.tex,*.pgf)\n"
 #endif
-                              "GIF Image (*.gif)\nBMP Image (*.bmp)\nXPM Image (*.xpm)\nPCX Image (*.pcx)\nICO Image (*.ico)\n"
-                              "RGB Image (*.rgb)\nXBM Image (*.xbm)\nTARGA Image (*.tga)\nPNG Image  (*.png)\n"
-                              "JPEG Image (*.jpg,*.jpeg)\nTIFF Image (*.tif,*.tiff)\n"
-                              "Postscript (*.ps)\nEncapsulated Postscript (*.eps)\nPortable Document Format (*.pdf)\n"
-                              "Scalable Vector Graphics (*.svg)\nLATEX text strings (*.tex)\nPortable LaTeX Graphics (*.pgf)\n"
-                              "All Files (*)");
-    if (gCurrentFolder.length() != 0) {
-        opendialog.setDirectory(gCurrentFolder);
-    }
-    if (!opendialog.execute() || !MFXUtils::userPermitsOverwritingWhenFileExists(this, opendialog.getFilename())) {
-        return 1;
-    }
-    gCurrentFolder = opendialog.getDirectory();
-    std::string file = opendialog.getFilename().text();
-    std::string error = myView->makeSnapshot(file);
-    if (error == "video") {
-        button->setChecked(!button->amChecked());
-    } else if (error != "") {
-        FXMessageBox::error(this, MBOX_OK, "Saving failed.", "%s", error.c_str());
+                                  "GIF Image (*.gif)\nBMP Image (*.bmp)\nXPM Image (*.xpm)\nPCX Image (*.pcx)\nICO Image (*.ico)\n"
+                                  "RGB Image (*.rgb)\nXBM Image (*.xbm)\nTARGA Image (*.tga)\nPNG Image  (*.png)\n"
+                                  "JPEG Image (*.jpg,*.jpeg)\nTIFF Image (*.tif,*.tiff)\n"
+                                  "Postscript (*.ps)\nEncapsulated Postscript (*.eps)\nPortable Document Format (*.pdf)\n"
+                                  "Scalable Vector Graphics (*.svg)\nLATEX text strings (*.tex)\nPortable LaTeX Graphics (*.pgf)\n"
+                                  "All Files (*)");
+        if (gCurrentFolder.length() != 0) {
+            opendialog.setDirectory(gCurrentFolder);
+        }
+        if (!opendialog.execute() || !MFXUtils::userPermitsOverwritingWhenFileExists(this, opendialog.getFilename())) {
+            return 1;
+        }
+        gCurrentFolder = opendialog.getDirectory();
+        std::string file = opendialog.getFilename().text();
+        std::string error = myView->makeSnapshot(file);
+        if (error == "video") {
+            button->setChecked(!button->amChecked());
+        } else if (error != "") {
+            FXMessageBox::error(this, MBOX_OK, "Saving failed.", "%s", error.c_str());
+        }
     }
     return 1;
 }
@@ -181,17 +187,17 @@ long
 GUISUMOViewParent::onCmdLocate(FXObject*, FXSelector sel, void*) {
     std::vector<GUIGlID> ids;
     GUIIcon icon;
-    std::string title;
+    std::string chooserTitle;
     switch (FXSELID(sel)) {
         case MID_LOCATEJUNCTION:
             ids = static_cast<GUINet*>(GUINet::getInstance())->getJunctionIDs(myParent->listInternal());
-            icon = ICON_LOCATEJUNCTION;
-            title = "Junction Chooser";
+            icon = GUIIcon::LOCATEJUNCTION;
+            chooserTitle = "Junction Chooser";
             break;
         case MID_LOCATEEDGE:
             ids = GUIEdge::getIDs(myParent->listInternal());
-            icon = ICON_LOCATEEDGE;
-            title = "Edge Chooser";
+            icon = GUIIcon::LOCATEEDGE;
+            chooserTitle = "Edge Chooser";
             break;
         case MID_LOCATEVEHICLE:
             if (MSGlobals::gUseMesoSim) {
@@ -200,33 +206,33 @@ GUISUMOViewParent::onCmdLocate(FXObject*, FXSelector sel, void*) {
                 static_cast<GUIVehicleControl&>(MSNet::getInstance()->getVehicleControl()).insertVehicleIDs(
                     ids, myParent->listParking(), myParent->listTeleporting());
             }
-            icon = ICON_LOCATEVEHICLE;
-            title = "Vehicle Chooser";
+            icon = GUIIcon::LOCATEVEHICLE;
+            chooserTitle = "Vehicle Chooser";
             break;
         case MID_LOCATEPERSON:
             static_cast<GUITransportableControl&>(MSNet::getInstance()->getPersonControl()).insertPersonIDs(ids);
-            icon = ICON_LOCATEPERSON;
-            title = "Person Chooser";
+            icon = GUIIcon::LOCATEPERSON;
+            chooserTitle = "Person Chooser";
             break;
         case MID_LOCATETLS:
             ids = static_cast<GUINet*>(GUINet::getInstance())->getTLSIDs();
-            icon = ICON_LOCATETLS;
-            title = "Traffic Lights Chooser";
+            icon = GUIIcon::LOCATETLS;
+            chooserTitle = "Traffic Lights Chooser";
             break;
         case MID_LOCATEADD:
-            ids = GUIGlObject_AbstractAdd::getIDList(GLO_ADDITIONAL);
-            icon = ICON_LOCATEADD;
-            title = "Additional Objects Chooser";
+            ids = GUIGlObject_AbstractAdd::getIDList(GLO_ADDITIONALELEMENT);
+            icon = GUIIcon::LOCATEADD;
+            chooserTitle = "Additional Objects Chooser";
             break;
         case MID_LOCATEPOI:
             ids = static_cast<GUIShapeContainer&>(GUINet::getInstance()->getShapeContainer()).getPOIIds();
-            icon = ICON_LOCATEPOI;
-            title = "POI Chooser";
+            icon = GUIIcon::LOCATEPOI;
+            chooserTitle = "POI Chooser";
             break;
         case MID_LOCATEPOLY:
             ids = static_cast<GUIShapeContainer&>(GUINet::getInstance()->getShapeContainer()).getPolygonIDs();
-            icon = ICON_LOCATEPOLY;
-            title = "Polygon Chooser";
+            icon = GUIIcon::LOCATEPOLY;
+            chooserTitle = "Polygon Chooser";
             break;
         default:
             throw ProcessError("Unknown Message ID in onCmdLocate");
@@ -234,7 +240,7 @@ GUISUMOViewParent::onCmdLocate(FXObject*, FXSelector sel, void*) {
     myLocatorPopup->popdown();
     myLocatorButton->killFocus();
     myLocatorPopup->update();
-    new GUIDialog_GLObjChooser(this, GUIIconSubSys::getIcon(icon), title.c_str(), ids, GUIGlObjectStorage::gIDStorage);
+    new GUIDialog_GLObjChooser(this, GUIIconSubSys::getIcon(icon), chooserTitle.c_str(), ids, GUIGlObjectStorage::gIDStorage);
     return 1;
 }
 
@@ -273,16 +279,80 @@ GUISUMOViewParent::isSelected(GUIGlObject* o) const {
 
 
 long
-GUISUMOViewParent::onKeyPress(FXObject* o, FXSelector sel, void* data) {
-    myView->onKeyPress(o, sel, data);
+GUISUMOViewParent::onKeyPress(FXObject* o, FXSelector sel, void* ptr) {
+    myView->onKeyPress(o, sel, ptr);
     return 0;
 }
 
 
 long
-GUISUMOViewParent::onKeyRelease(FXObject* o, FXSelector sel, void* data) {
-    myView->onKeyRelease(o, sel, data);
+GUISUMOViewParent::onKeyRelease(FXObject* o, FXSelector sel, void* ptr) {
+    myView->onKeyRelease(o, sel, ptr);
     return 0;
+}
+
+
+void
+GUISUMOViewParent::buildSpeedControlToolbar() {
+    auto toolbar = myGripNavigationToolbar ? myGripNavigationToolbar : myStaticNavigationToolBar;
+    new FXVerticalSeparator(toolbar, GUIDesignVerticalSeparator);
+
+    //myToolBarDragSpeed = new FXToolBarShell(this, GUIDesignToolBar);
+    //myToolBarSpeed = new FXToolBar(toolbar, myToolBarDragSpeed, GUIDesignToolBarRaisedSameTop);
+    //mySpeedFactorSlider = new FXSlider(myToolBarSpeed, this, MID_SPEEDFACTOR, LAYOUT_FIX_WIDTH | SLIDER_ARROW_UP | SLIDER_TICKS_TOP, 0, 0, 300, 10, 0, 0, 5, 0);
+    mySpeedFactorSlider = new FXSlider(toolbar, this, MID_SPEEDFACTOR, LAYOUT_FIX_WIDTH | SLIDER_ARROW_UP | SLIDER_TICKS_TOP, 0, 0, 200, 10, 0, 0, 5, 0);
+    mySpeedFactorSlider->setRange(0, 200);
+    mySpeedFactorSlider->setHeadSize(10);
+    mySpeedFactorSlider->setIncrement(1);
+    mySpeedFactorSlider->setTickDelta(100);
+    mySpeedFactorSlider->setValue(100);
+    mySpeedFactorSlider->setHelpText("Control speedFactor of tracked object");
+    //mySpeedFactorSlider->hide();
+}
+
+long
+GUISUMOViewParent::onCmdSpeedFactor(FXObject*, FXSelector, void*) {
+    if (myView != nullptr && myView->getTrackedID() != GUIGlObject::INVALID_ID) {
+        GUIGlObject* o = GUIGlObjectStorage::gIDStorage.getObjectBlocking(myView->getTrackedID());
+        if (o != nullptr) {
+            const double speedFactor = mySpeedFactorSlider->getValue() / SPEEDFACTOR_SCALE;
+            if (o->getType() == GLO_VEHICLE) {
+                MSBaseVehicle* veh = dynamic_cast<MSBaseVehicle*>(o);
+                veh->setChosenSpeedFactor(speedFactor);
+            } else if (o->getType() == GLO_PERSON) {
+                //MSPerson* person = dynamic_cast<MSPerson*>(o);
+                //person->setChosenSpeedFactor(speedFactor);
+            }
+            mySpeedFactorSlider->setTipText(toString(speedFactor).c_str());
+        }
+
+    }
+    return 1;
+}
+
+long
+GUISUMOViewParent::onUpdSpeedFactor(FXObject* sender, FXSelector, void* ptr) {
+    bool disable = myView == nullptr || myView->getTrackedID() == GUIGlObject::INVALID_ID;
+    sender->handle(this, FXSEL(SEL_COMMAND, disable ? ID_DISABLE : ID_ENABLE), ptr);
+    if (disable) {
+        mySpeedFactorSlider->hide();
+    } else {
+        GUIGlObject* o = GUIGlObjectStorage::gIDStorage.getObjectBlocking(myView->getTrackedID());
+        if (o != nullptr) {
+            if (o->getType() == GLO_VEHICLE) {
+                MSBaseVehicle* veh = dynamic_cast<MSBaseVehicle*>(o);
+                mySpeedFactorSlider->setValue((int)(veh->getChosenSpeedFactor() * SPEEDFACTOR_SCALE));
+            } else if (o->getType() == GLO_PERSON) {
+                MSPerson* person = dynamic_cast<MSPerson*>(o);
+                mySpeedFactorSlider->setValue((int)(person->getChosenSpeedFactor() * SPEEDFACTOR_SCALE));
+            }
+            mySpeedFactorSlider->show();
+        } else {
+            myView->stopTrack();
+            mySpeedFactorSlider->hide();
+        }
+    }
+    return 1;
 }
 
 

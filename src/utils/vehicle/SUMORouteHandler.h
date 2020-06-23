@@ -1,28 +1,25 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    SUMORouteHandler.h
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @author  Michael Behrisch
 /// @date    Mon, 9 Jul 2001
-/// @version $Id$
 ///
 // Parser for routes during their loading
 /****************************************************************************/
-#ifndef SUMORouteHandler_h
-#define SUMORouteHandler_h
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include <utils/common/IDSupplier.h>
@@ -50,23 +47,32 @@ class SUMOVTypeParameter;
  */
 class SUMORouteHandler : public SUMOSAXHandler {
 public:
+    /// @brief enum for stops
+    enum StopPos {
+        STOPPOS_VALID,
+        STOPPOS_INVALID_STARTPOS,
+        STOPPOS_INVALID_ENDPOS,
+        STOPPOS_INVALID_LANELENGTH
+    };
+
     /// @brief standard constructor
-    SUMORouteHandler(const std::string& file, const std::string& expectedRoot);
+    SUMORouteHandler(const std::string& file, const std::string& expectedRoot, const bool hardFail);
 
     /// @brief standard destructor
     virtual ~SUMORouteHandler();
 
-    /// @brief Returns the last loaded depart time
-    SUMOTime getLastDepart() const;
+    /**@brief check start and end position of a stop
+     * @brief return */
+    static StopPos checkStopPos(double& startPos, double& endPos, const double laneLength, const double minLength, const bool friendlyPos);
 
-    /// @brief check start and end position of a stop
-    static bool checkStopPos(double& startPos, double& endPos, const double laneLength,
-                             const double minLength, const bool friendlyPos);
+    /// @brief check if start and end position of a stop is valid
+    static bool isStopPosValid(const double startPos, const double endPos, const double laneLength, const double minLength, const bool friendlyPos);
 
     /// @brief returns the first departure time that was ever read
-    SUMOTime getFirstDepart() const {
-        return myFirstDepart;
-    }
+    SUMOTime getFirstDepart() const;
+
+    /// @brief Returns the last loaded depart time
+    SUMOTime getLastDepart() const;
 
 protected:
     /// @name inherited from GenericSAXHandler
@@ -105,6 +111,9 @@ protected:
 
     /// @brief opens a flow for reading
     virtual void openFlow(const SUMOSAXAttributes& attrs) = 0;
+
+    /// @brief opens a route flow for reading
+    virtual void openRouteFlow(const SUMOSAXAttributes& attrs) = 0;
 
     /// @brief opens a trip for reading
     virtual void openTrip(const SUMOSAXAttributes& attrs) = 0;
@@ -191,6 +200,9 @@ protected:
     bool parseStop(SUMOVehicleParameter::Stop& stop, const SUMOSAXAttributes& attrs, std::string errorSuffix, MsgHandler* const errorOutput);
 
 protected:
+    /// @brief flag to enable or disable hard fails
+    const bool myHardFail;
+
     /// @brief Parameter of the current vehicle, trip, person, container or flow
     SUMOVehicleParameter* myVehicleParameter;
 
@@ -218,6 +230,9 @@ protected:
     /// @brief The currently parsed vehicle type
     SUMOVTypeParameter* myCurrentVType;
 
+    /// @brief Parameterised used for saving loaded generic parameters that aren't saved in Vehicles or Vehicle Types
+    Parameterised myLoadedParameterised;
+
     /// @brief generates numerical ids
     IDSupplier myIdSupplier;
 
@@ -240,8 +255,3 @@ private:
     /// @brief Invalidated assignment operator
     SUMORouteHandler& operator=(const SUMORouteHandler& s) = delete;
 };
-
-
-#endif
-
-/****************************************************************************/

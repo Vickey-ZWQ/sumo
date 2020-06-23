@@ -1,28 +1,25 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSVehicleControl.h
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @author  Michael Behrisch
 /// @date    Wed, 10. Dec 2003
-/// @version $Id$
 ///
 // The class responsible for building and deletion of vehicles
 /****************************************************************************/
-#ifndef MSVehicleControl_h
-#define MSVehicleControl_h
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include <cmath>
@@ -44,6 +41,7 @@
 // ===========================================================================
 class SUMOVehicle;
 class SUMOVehicleParameter;
+class MSBaseVehicle;
 class MSVehicle;
 class MSRoute;
 class MSVehicleType;
@@ -143,6 +141,11 @@ public:
      */
     virtual void deleteVehicle(SUMOVehicle* v, bool discard = false);
 
+    void fixVehicleCounts() {
+        myLoadedVehNo++;
+        myEndedVehNo++;
+        myDiscarded++;
+    }
 
     /** @brief Removes a vehicle after it has ended
      *
@@ -155,7 +158,7 @@ public:
      *
      * @param[in] veh The vehicle to remove
      */
-    void scheduleVehicleRemoval(SUMOVehicle* veh, bool checkDuplicate=false);
+    void scheduleVehicleRemoval(SUMOVehicle* veh, bool checkDuplicate = false);
 
 
     /** @brief Removes a vehicle after it has ended
@@ -272,9 +275,10 @@ public:
      * considering that "frac" of all vehicles shall be emitted overall
      * if a negative fraction is given the demand scaling factor is used
      * (--scale)
+     * if a negative loaded number is is given, myLoadedVehNo is used
      * @return the number of vehicles to create (something between 0 and ceil(frac))
      */
-    int getQuota(double frac = -1) const;
+    int getQuota(double frac = -1, int loaded = -1) const;
 
 
     /** @brief Returns the number of build vehicles that have not been removed or
@@ -312,6 +316,11 @@ public:
     /// @brief return the number of emergency stops
     int getEmergencyStops() const {
         return myEmergencyStops;
+    }
+
+    /// @brief return the number of vehicles that are currently stopped
+    int getStoppedVehiclesCount() const {
+        return myStoppedVehicles;
     }
 
     /** @brief Returns the total departure delay
@@ -410,21 +419,10 @@ public:
     */
     const std::set<std::string> getVTypeDistributionMembership(const std::string& id) const;
 
+    /// @brief return the vehicle type distribution with the given id
+    const RandomDistributor<MSVehicleType*>* getVTypeDistribution(const std::string& typeDistID) const;
+
     /// @}
-
-    /// @brief Adds a vehicle to the list of waiting vehiclse to a given edge
-    void addWaiting(const MSEdge* const edge, SUMOVehicle* vehicle);
-
-    /// @brief Removes a vehicle from the list of waiting vehicles to a given edge
-    void removeWaiting(const MSEdge* const edge, const SUMOVehicle* vehicle);
-
-    /* @brief returns a vehicle of the given lines that is waiting for a for a person or a container at this edge at the given positions
-     * @param[in] edge The edge at which the vehicle is positioned.
-     * @param[in] lines The set of lines from which at least one must correspond to the line of the vehicle
-     * @param[in] position The vehicle shall be positioned in the interval [position - t, position + t], where t is some tolerance
-     * @param[in] ridingID The id of the person or container that wants to ride
-     */
-    SUMOVehicle* getWaitingVehicle(MSTransportable* transportable, const MSEdge* const edge, const double position);
 
     /** @brief increases the count of vehicles waiting for a transport to allow recognition of person / container related deadlocks
      */
@@ -471,6 +469,16 @@ public:
         myEmergencyStops++;
     }
 
+    /// @brief register emergency stop
+    void registerStopStarted() {
+        myStoppedVehicles++;
+    }
+
+    /// @brief register emergency stop
+    void registerStopEnded() {
+        myStoppedVehicles--;
+    }
+
     /// @name State I/O
     /// @{
 
@@ -481,6 +489,9 @@ public:
     /** @brief Saves the current state into the given stream
      */
     void saveState(OutputDevice& out);
+
+    /** @brief Remove all vehicles before quick-loading state */
+    void clearState();
     /// @}
 
     /// @brief avoid counting a vehicle twice if it was loaded from state and route input
@@ -525,14 +536,19 @@ private:
      */
     bool checkVType(const std::string& id);
 
+    /// @brief whether the given vehicle is scheduled for removal
+    bool isPendingRemoval(SUMOVehicle* veh);
+
 protected:
+    void initVehicle(MSBaseVehicle* built, const bool ignoreStopErrors);
+
+private:
     /// @name Vehicle statistics (always accessible)
     /// @{
 
     /// @brief The number of build vehicles
     int myLoadedVehNo;
 
-private:
     /// @brief The number of vehicles within the network (build and inserted but not removed)
     int myRunningVehNo;
 
@@ -557,6 +573,8 @@ private:
     /// @brief The number of emergency stops
     int myEmergencyStops;
 
+    /// @brief The number of stopped vehicles
+    int myStoppedVehicles;
     /// @}
 
 
@@ -605,11 +623,11 @@ private:
     /// @brief Whether the default pedestrian type was already used or can still be replaced
     bool myDefaultPedTypeMayBeDeleted;
 
+    /// @brief Whether the default container type was already used or can still be replaced
+    bool myDefaultContainerTypeMayBeDeleted;
+
     /// @brief Whether the default bicycle type was already used or can still be replaced
     bool myDefaultBikeTypeMayBeDeleted;
-
-    /// the lists of waiting vehicles to a given edge
-    std::map<const MSEdge* const, std::vector<SUMOVehicle*> > myWaiting;
 
     /// the number of vehicles wainting for persons contained in myWaiting which can only continue by being triggered
     int myWaitingForPerson;
@@ -645,9 +663,3 @@ private:
 
 
 };
-
-
-#endif
-
-/****************************************************************************/
-

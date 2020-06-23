@@ -1,26 +1,24 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    TraCIServerAPI_GUI.cpp
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @author  Michael Behrisch
 /// @date    07.05.2009
-/// @version $Id$
 ///
 // APIs for getting/setting GUI values via TraCI
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 #include <fx.h>
@@ -80,7 +78,7 @@ TraCIServerAPI_GUI::processGet(TraCIServer& server, tcpip::Storage& inputStorage
                 break;
             case libsumo::VAR_VIEW_SCHEMA:
                 tempMsg.writeUnsignedByte(libsumo::TYPE_STRING);
-                tempMsg.writeString(v->getVisualisationSettings()->name);
+                tempMsg.writeString(v->getVisualisationSettings().name);
                 break;
             case libsumo::VAR_VIEW_BOUNDARY: {
                 tempMsg.writeUnsignedByte(libsumo::TYPE_POLYGON);
@@ -90,13 +88,13 @@ TraCIServerAPI_GUI::processGet(TraCIServer& server, tcpip::Storage& inputStorage
                 tempMsg.writeDouble(b.ymin());
                 tempMsg.writeDouble(b.xmax());
                 tempMsg.writeDouble(b.ymax());
-                break;
             }
+            break;
             case libsumo::VAR_HAS_VIEW: {
                 tempMsg.writeUnsignedByte(libsumo::TYPE_INTEGER);
                 tempMsg.writeInt(v != nullptr ? 1 : 0);
-                break;
             }
+            break;
             case libsumo::VAR_TRACK_VEHICLE: {
                 GUIVehicle* gv = 0;
                 std::string id;
@@ -114,8 +112,8 @@ TraCIServerAPI_GUI::processGet(TraCIServer& server, tcpip::Storage& inputStorage
                 if (gid != GUIGlObject::INVALID_ID) {
                     GUIGlObjectStorage::gIDStorage.unblockObject(gid);
                 }
-                break;
             }
+            break;
             default:
                 break;
         }
@@ -139,7 +137,7 @@ TraCIServerAPI_GUI::processSet(TraCIServer& server, tcpip::Storage& inputStorage
         return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "Change GUI State: unsupported variable " + toHex(variable, 2) + " specified", outputStorage);
     }
     // id
-    std::string id = inputStorage.readString();
+    const std::string id = inputStorage.readString();
     GUISUMOAbstractView* v = getNamedView(id);
     if (v == nullptr) {
         return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "View '" + id + "' is not known", outputStorage);
@@ -185,8 +183,8 @@ TraCIServerAPI_GUI::processSet(TraCIServer& server, tcpip::Storage& inputStorage
                 return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "The boundary must be specified by a bounding box.", outputStorage);
             }
             v->centerTo(Boundary(p[0].x(), p[0].y(), p[1].x(), p[1].y()));
-            break;
         }
+        break;
         case libsumo::VAR_SCREENSHOT: {
             if (inputStorage.readUnsignedByte() != libsumo::TYPE_COMPOUND) {
                 return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "Screenshot requires a compound object.", outputStorage);
@@ -211,22 +209,23 @@ TraCIServerAPI_GUI::processSet(TraCIServer& server, tcpip::Storage& inputStorage
         }
         break;
         case libsumo::VAR_TRACK_VEHICLE: {
-            std::string id;
-            if (!server.readTypeCheckingString(inputStorage, id)) {
+            std::string vehID;
+            if (!server.readTypeCheckingString(inputStorage, vehID)) {
                 return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "Tracking requires a string vehicle ID.", outputStorage);
             }
-            if (id == "") {
+            if (vehID == "") {
                 v->stopTrack();
             } else {
-                SUMOVehicle* veh = MSNet::getInstance()->getVehicleControl().getVehicle(id);
+                SUMOVehicle* veh = MSNet::getInstance()->getVehicleControl().getVehicle(vehID);
                 if (veh == nullptr) {
-                    return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "Could not find vehicle '" + id + "'.", outputStorage);
+                    return server.writeErrorStatusCmd(libsumo::CMD_SET_GUI_VARIABLE, "Could not find vehicle '" + vehID + "'.", outputStorage);
                 }
                 if (v->getTrackedID() != static_cast<GUIVehicle*>(veh)->getGlID()) {
                     v->startTrack(static_cast<GUIVehicle*>(veh)->getGlID());
                 }
             }
         }
+        break;
         default:
             break;
     }

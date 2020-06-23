@@ -1,11 +1,15 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    NIImporter_Vissim.cpp
 /// @author  Daniel Krajzewicz
@@ -14,15 +18,9 @@
 /// @author  Lukas Grohmann (AIT)
 /// @author  Gerald Richter (AIT)
 /// @date    Sept 2002
-/// @version $Id$
 ///
 // -------------------
 /****************************************************************************/
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
 #include <config.h>
 
 
@@ -126,6 +124,8 @@ StringBijection<int>::Entry NIImporter_Vissim::vissimTags[] = {
     { "links",            NIImporter_Vissim::VISSIM_TAG_LINKS },
     { "points3D",         NIImporter_Vissim::VISSIM_TAG_POINTS3D },
     { "point3D",          NIImporter_Vissim::VISSIM_TAG_POINT3D },
+    { "linkPolyPoint",    NIImporter_Vissim::VISSIM_TAG_LINKPOLYPOINT },
+    { "linkPolyPts",      NIImporter_Vissim::VISSIM_TAG_LINKPOLYPTS },
     { "fromLinkEndPt",    NIImporter_Vissim::VISSIM_TAG_FROM },
     { "toLinkEndPt",      NIImporter_Vissim::VISSIM_TAG_TO },
     { "vehicleInput",     NIImporter_Vissim::VISSIM_TAG_VEHICLE_INPUT },
@@ -262,7 +262,7 @@ NIImporter_Vissim::NIVissimXMLHandler_Streckendefinition::myStartElement(int ele
         myElemData["to_lane"].push_back(to[1]);
     }
 
-    if (element == VISSIM_TAG_POINT3D) {
+    if (element == VISSIM_TAG_POINT3D || element == VISSIM_TAG_LINKPOLYPOINT) {
         bool ok = true;
         // create a <sep> separated string of coordinate data
         std::string sep(" ");
@@ -1262,6 +1262,4 @@ NIImporter_Vissim::buildParsers() {
 }
 
 
-
 /****************************************************************************/
-

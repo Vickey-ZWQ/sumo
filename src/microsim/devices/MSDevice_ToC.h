@@ -1,29 +1,26 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2013-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2013-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    MSDevice_ToC.h
 /// @author  Leonhard Luecken
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @date    01.04.2018
-/// @version $Id$
 ///
 // The ToC Device controls the transition of control between automated and manual driving.
 //
 /****************************************************************************/
-#ifndef MSDevice_ToC_h
-#define MSDevice_ToC_h
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include <random>
@@ -55,7 +52,7 @@ class RGBColor;
 class MSDevice_ToC : public MSVehicleDevice {
 private:
     // All currently existing ToC device instances
-    static std::set<MSDevice_ToC*> instances;
+    static std::set<MSDevice_ToC*, ComparatorNumericalIdLess> myInstances;
     // All files, that receive ToC output (TODO: check if required)
     static std::set<std::string> createdOutputFiles;
 
@@ -91,8 +88,8 @@ public:
 
     /** @brief returns all currently existing ToC devices
      */
-    static const std::set<MSDevice_ToC*>& getInstances() {
-        return instances;
+    static const std::set<MSDevice_ToC*, ComparatorNumericalIdLess>& getInstances() {
+        return myInstances;
     };
 
     /** @brief Closes root tags of output files
@@ -119,18 +116,7 @@ private:
 
     /// @name Helpers for parameter parsing
     /// @{
-    static std::string getManualType(const SUMOVehicle& v, const OptionsCont& oc);
-    static std::string getAutomatedType(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getResponseTime(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getRecoveryRate(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getLCAbstinence(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getInitialAwareness(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getMRMDecel(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getDynamicToCThreshold(const SUMOVehicle& v, const OptionsCont& oc);
     static double getDynamicMRMProbability(const SUMOVehicle& v, const OptionsCont& oc);
-    static double getMaxPreparationAccel(const SUMOVehicle& v, const OptionsCont& oc);
-    static bool getMRMKeepRight(const SUMOVehicle& v, const OptionsCont& oc);
-    static bool useColorScheme(const SUMOVehicle& v, const OptionsCont& oc);
     static std::string getOutputFilename(const SUMOVehicle& v, const OptionsCont& oc);
     static OpenGapParams getOpenGapParams(const SUMOVehicle& v, const OptionsCont& oc);
 
@@ -150,9 +136,9 @@ public:
 
     /// @brief Return value indicates whether the device still wants to be notified about the vehicle movement
     bool notifyMove(SUMOTrafficObject& veh,
-                            double oldPos,
-                            double newPos,
-                            double newSpeed) override;
+                    double oldPos,
+                    double newPos,
+                    double newSpeed) override;
 
     /// @brief try to retrieve the given parameter from this device. Throw exception for unsupported key
     std::string getParameter(const std::string& key) const override;
@@ -188,7 +174,7 @@ public:
     }
 
     static std::mt19937* getResponseTimeRNG() {
-    	return &myResponseTimeRNG;
+        return &myResponseTimeRNG;
     }
 private:
     /** @brief Constructor
@@ -203,14 +189,16 @@ private:
      * @param[in] lcAbstinence awareness level below which no lane changes are taken out
      * @param[in] initialAwareness value to which the awareness is set after takeover
      * @param[in] mrmDecel constant deceleration rate assumed to be applied during an MRM
+     * @param[in] mrmKeepRight whether the vehicle tries to change to the right during an MRM
+     * @param[in] mrmSafeSpot stopping place to reach during an MRM
      * @param[in] useColorScheme whether the color of the vehicle should be changed according to its current ToC-state
      * @param[in] ogp parameters for the openGap mechanism applied during ToC preparation phase
      */
     MSDevice_ToC(SUMOVehicle& holder, const std::string& id, const std::string& outputFilename,
-                 std::string manualType, std::string automatedType, SUMOTime responseTime, double recoveryRate,
+                 const std::string& manualType, const std::string& automatedType, SUMOTime responseTime, double recoveryRate,
                  double lcAbstinence, double initialAwareness, double mrmDecel,
-				 double dynamicToCThreshold, double dynamicMRMProbability, double maxPreparationAccel,
-				 bool mrmKeepRight, bool useColorScheme, OpenGapParams ogp);
+                 double dynamicToCThreshold, double dynamicMRMProbability, double maxPreparationAccel,
+                 bool mrmKeepRight, const std::string& mrmSafeSpot, SUMOTime mrmSafeSpotDuration, bool useColorScheme, OpenGapParams ogp);
 
     /** @brief Initialize vehicle colors for different states
      *  @note  For MANUAL and AUTOMATED, the color of the given types are used,
@@ -324,6 +312,12 @@ private:
     /// @brief Storage for events to be written to the output
     std::queue<std::pair<SUMOTime, std::string> > myEvents;
 
+    /// @brief Storage for events to be written to the output
+    std::queue<std::pair<std::string, double> > myEventLanes;
+
+    /// @brief Storage for events to be written to the output
+    std::queue<std::pair<double, double>> myEventXY;
+
     /// @brief LC mode overridden during MRM, stored for restoration
     int myPreviousLCMode;
 
@@ -349,6 +343,12 @@ private:
     /// @brief Whether vehicle tries to change to the right during an MRM
     bool myMRMKeepRight;
 
+    /// @brief stop vehicle tries to reach during MRM
+    std::string myMRMSafeSpot;
+
+    /// @brief duration at stop vehicle tries to reach during MRM
+    SUMOTime myMRMSafeSpotDuration;
+
     /// @brief Maximal acceleration that may be applied during the ToC preparation phase
     /// TODO: Make effective
     double myMaxPreparationAccel;
@@ -361,7 +361,7 @@ private:
     static std::vector<double> lookupResponseTimeLeadTimes;
     /// @brief Mean of the response time distribution. (Only depends on given lead time)
     static double responseTimeMean(double leadTime) {
-        return MIN2(2*sqrt(leadTime), 0.7*leadTime);
+        return MIN2(2 * sqrt(leadTime), 0.7 * leadTime);
     };
     /// @brief Variances of the response time distribution. Given the lead time and the MRM probability
     /// the variances in this table ensure that for the mean returned by responseTimeMean(leadTime)
@@ -388,9 +388,3 @@ private:
 
 
 };
-
-
-#endif
-
-/****************************************************************************/
-

@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 # Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-# Copyright (C) 2008-2019 German Aerospace Center (DLR) and others.
-# This program and the accompanying materials
-# are made available under the terms of the Eclipse Public License v2.0
-# which accompanies this distribution, and is available at
-# http://www.eclipse.org/legal/epl-v20.html
-# SPDX-License-Identifier: EPL-2.0
+# Copyright (C) 2008-2020 German Aerospace Center (DLR) and others.
+# This program and the accompanying materials are made available under the
+# terms of the Eclipse Public License 2.0 which is available at
+# https://www.eclipse.org/legal/epl-2.0/
+# This Source Code may also be made available under the following Secondary
+# Licenses when the conditions for such availability set forth in the Eclipse
+# Public License 2.0 are satisfied: GNU General Public License, version 2
+# or later which is available at
+# https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+# SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 
 # @file    connection.py
 # @author  Michael Behrisch
@@ -14,7 +18,6 @@
 # @author  Daniel Krajzewicz
 # @author  Jakob Erdmann
 # @date    2008-10-09
-# @version $Id$
 
 from __future__ import print_function
 from __future__ import absolute_import
@@ -22,12 +25,8 @@ import socket
 import struct
 import sys
 import warnings
+import abc
 
-try:
-    import traciemb
-    _embedded = True
-except ImportError:
-    _embedded = False
 from . import constants as tc
 from .exceptions import TraCIException, FatalTraCIError
 from .domain import _defaultDomains
@@ -43,19 +42,19 @@ class Connection:
     """
 
     def __init__(self, host, port, process):
-        if not _embedded:
-            if sys.platform.startswith('java'):
-                # working around jython 2.7.0 bug #2273
-                self._socket = socket.socket(
-                    socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
-            else:
-                self._socket = socket.socket()
-            self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self._socket.connect((host, port))
-            self._process = process
+        if sys.platform.startswith('java'):
+            # working around jython 2.7.0 bug #2273
+            self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+        else:
+            self._socket = socket.socket()
+        self._socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        self._socket.connect((host, port))
+        self._process = process
         self._string = bytes()
         self._queue = []
         self._subscriptionMapping = {}
+        self._stepListeners = {}
+        self._nextStepListenerID = 0
         for domain in _defaultDomains:
             domain._register(self, self._subscriptionMapping)
 
@@ -66,11 +65,6 @@ class Connection:
         self._string += struct.pack("!Bi", tc.TYPE_STRINGLIST, len(l))
         for s in l:
             self._string += struct.pack("!i", len(s)) + s.encode("latin1")
-
-    def _packDoubleList(self, l):
-        self._string += struct.pack("!Bi", tc.TYPE_DOUBLELIST, len(l))
-        for x in l:
-            self._string += struct.pack("!d", x)
 
     def _recvExact(self):
         try:
@@ -92,13 +86,10 @@ class Connection:
             return None
 
     def _sendExact(self):
-        if _embedded:
-            result = Storage(traciemb.execute(self._string))
-        else:
-            length = struct.pack("!i", len(self._string) + 4)
-            # print("python_sendExact: '%s'" % ' '.join(map(lambda x : "%X" % ord(x), self._string)))
-            self._socket.send(length + self._string)
-            result = self._recvExact()
+        length = struct.pack("!i", len(self._string) + 4)
+        # print("python_sendExact: '%s'" % ' '.join(map(lambda x : "%X" % ord(x), self._string)))
+        self._socket.send(length + self._string)
+        result = self._recvExact()
         if not result:
             self._socket.close()
             del self._socket
@@ -129,45 +120,61 @@ class Connection:
             self._string += struct.pack("!BiB", 0, length + 4, cmdID)
         self._packString(objID, varID)
 
-    def _sendReadOneStringCmd(self, cmdID, varID, objID):
-        self._beginMessage(cmdID, varID, objID)
-        return self._checkResult(cmdID, varID, objID)
-
-    def _sendIntCmd(self, cmdID, varID, objID, value):
-        self._beginMessage(cmdID, varID, objID, 1 + 4)
-        self._string += struct.pack("!Bi", tc.TYPE_INTEGER, value)
-        self._sendExact()
+    def _sendCmd(self, cmdID, varID, objID, format="", *values):
+        packed = bytes()
+        for f, v in zip(format, values):
+            if f == "i":
+                packed += struct.pack("!Bi", tc.TYPE_INTEGER, int(v))
+            elif f == "d":
+                packed += struct.pack("!Bd", tc.TYPE_DOUBLE, v)
+            elif f == "b":
+                packed += struct.pack("!Bb", tc.TYPE_BYTE, int(v))
+            elif f == "B":
+                packed += struct.pack("!BB", tc.TYPE_UBYTE, int(v))
+            elif f == "u":  # raw unsigned byte needed for distance command
+                packed += struct.pack("!B", int(v))
+            elif f == "s":
+                packed += struct.pack("!Bi", tc.TYPE_STRING, len(v)) + v.encode("latin1")
+            elif f == "p":  # polygon
+                if len(v) <= 255:
+                    packed += struct.pack("!BB", tc.TYPE_POLYGON, len(v))
+                else:
+                    packed += struct.pack("!BBi", tc.TYPE_POLYGON, 0, len(v))
+                for p in v:
+                    packed += struct.pack("!dd", *p)
+            elif f == "t":  # tuple aka compound
+                packed += struct.pack("!Bi", tc.TYPE_COMPOUND, v)
+            elif f == "c":  # color
+                packed += struct.pack("!BBBBB", tc.TYPE_COLOR, int(v[0]), int(v[1]), int(v[2]),
+                                                int(v[3]) if len(v) > 3 else 255)
+            elif f == "l":  # string list
+                packed += struct.pack("!Bi", tc.TYPE_STRINGLIST, len(v))
+                for s in v:
+                    packed += struct.pack("!i", len(s)) + s.encode("latin1")
+            elif f == "f":  # float list
+                packed += struct.pack("!Bi", tc.TYPE_DOUBLELIST, len(v))
+                for x in v:
+                    packed += struct.pack("!d", x)
+            elif f == "o":
+                packed += struct.pack("!Bdd", tc.POSITION_2D, *v)
+            elif f == "O":
+                packed += struct.pack("!Bddd", tc.POSITION_3D, *v)
+            elif f == "g":
+                packed += struct.pack("!Bdd", tc.POSITION_LON_LAT, *v)
+            elif f == "G":
+                packed += struct.pack("!Bddd", tc.POSITION_LON_LAT_ALT, *v)
+            elif f == "r":
+                packed += struct.pack("!Bi", tc.POSITION_ROADMAP, len(v[0])) + v[0].encode("latin1")
+                packed += struct.pack("!dB", v[1], v[2])
+        self._beginMessage(cmdID, varID, objID, len(packed))
+        self._string += packed
+        return self._sendExact()
 
     def _sendDoubleCmd(self, cmdID, varID, objID, value):
-        self._beginMessage(cmdID, varID, objID, 1 + 8)
-        self._string += struct.pack("!Bd", tc.TYPE_DOUBLE, value)
-        self._sendExact()
-
-    def _sendByteCmd(self, cmdID, varID, objID, value):
-        self._beginMessage(cmdID, varID, objID, 1 + 1)
-        self._string += struct.pack("!BB", tc.TYPE_BYTE, value)
-        self._sendExact()
-
-    def _sendUByteCmd(self, cmdID, varID, objID, value):
-        self._beginMessage(cmdID, varID, objID, 1 + 1)
-        self._string += struct.pack("!BB", tc.TYPE_UBYTE, value)
-        self._sendExact()
+        self._sendCmd(cmdID, varID, objID, "d", value)
 
     def _sendStringCmd(self, cmdID, varID, objID, value):
-        self._beginMessage(cmdID, varID, objID, 1 + 4 + len(value))
-        self._packString(value)
-        self._sendExact()
-
-    def _checkResult(self, cmdID, varID, objID):
-        result = self._sendExact()
-        result.readLength()
-        response, retVarID = result.read("!BB")
-        objectID = result.readString()
-        if response - cmdID != 16 or retVarID != varID or objectID != objID:
-            raise FatalTraCIError("Received answer %s,%s,%s for command %s,%s,%s."
-                                  % (response, retVarID, objectID, cmdID, varID, objID))
-        result.read("!B")     # Return type of the variable
-        return result
+        self._sendCmd(cmdID, varID, objID, "s", value)
 
     def _readSubscription(self, result):
         # to enable this you also need to set _DEBUG to True in storage.py
@@ -182,10 +189,9 @@ class Connection:
         numVars = result.read("!B")[0]
         if isVariableSubscription:
             while numVars > 0:
-                varID = result.read("!B")[0]
-                status, _ = result.read("!BB")
+                varID, status = result.read("!BB")
                 if status:
-                    print("Error!", result.readString())
+                    print("Error!", result.readTypedString())
                 elif response in self._subscriptionMapping:
                     self._subscriptionMapping[response].add(objectID, varID, result)
                 else:
@@ -200,10 +206,9 @@ class Connection:
                     self._subscriptionMapping[response].addContext(
                         objectID, self._subscriptionMapping[domain], oid)
                 for __ in range(numVars):
-                    varID = result.read("!B")[0]
-                    status, ___ = result.read("!BB")
+                    varID, status = result.read("!BB")
                     if status:
-                        print("Error!", result.readString())
+                        print("Error!", result.readTypedString())
                     elif response in self._subscriptionMapping:
                         self._subscriptionMapping[response].addContext(
                             objectID, self._subscriptionMapping[domain], oid, varID, result)
@@ -268,7 +273,8 @@ class Connection:
             assert(params is None)
             length = 1 + 1 + 1  # length + CMD + FILTER_ID
             self._string += struct.pack("!BBB", length, command, filterType)
-        elif filterType in (tc.FILTER_TYPE_DOWNSTREAM_DIST, tc.FILTER_TYPE_UPSTREAM_DIST):
+        elif filterType in (tc.FILTER_TYPE_DOWNSTREAM_DIST, tc.FILTER_TYPE_UPSTREAM_DIST,
+                            tc.FILTER_TYPE_FIELD_OF_VISION, tc.FILTER_TYPE_LATERAL_DIST):
             # filter with float parameter
             assert(type(params) is float)
             length = 1 + 1 + 1 + 1 + 8  # length + CMD + FILTER_ID + floattype + float
@@ -304,9 +310,6 @@ class Connection:
                     i += 256
                 self._string += struct.pack("!B", i)
 
-    def isEmbedded(self):
-        return _embedded
-
     def load(self, args):
         """
         Load a simulation from the given arguments.
@@ -334,7 +337,49 @@ class Connection:
         while numSubs > 0:
             responses.append(self._readSubscription(result))
             numSubs -= 1
+
+        # manage stepListeners
+        listenersToRemove = []
+        for (listenerID, listener) in self._stepListeners.items():
+            keep = listener.step(step)
+            if not keep:
+                listenersToRemove.append(listenerID)
+        for listenerID in listenersToRemove:
+            self.removeStepListener(listenerID)
+
         return responses
+
+    def addStepListener(self, listener):
+        """addStepListener(traci.StepListener) -> int
+
+        Append the step listener (its step function is called at the end of every call to traci.simulationStep())
+        Returns the ID assigned to the listener if it was added successfully, None otherwise.
+        """
+        if issubclass(type(listener), StepListener):
+            listener.setID(self._nextStepListenerID)
+            self._stepListeners[self._nextStepListenerID] = listener
+            self._nextStepListenerID += 1
+            # print ("traci: Added stepListener %s\nlisteners: %s"%(_nextStepListenerID - 1, _stepListeners))
+            return self._nextStepListenerID - 1
+        warnings.warn(
+            "Proposed listener's type must inherit from traci.StepListener. Not adding object of type '%s'" %
+            type(listener))
+        return None
+
+    def removeStepListener(self, listenerID):
+        """removeStepListener(traci.StepListener) -> bool
+
+        Remove the step listener from traci's step listener container.
+        Returns True if the listener was removed successfully, False if it wasn't registered.
+        """
+        # print ("traci: removeStepListener %s\nlisteners: %s"%(listenerID, _stepListeners))
+        if listenerID in self._stepListeners:
+            self._stepListeners[listenerID].cleanUp()
+            del self._stepListeners[listenerID]
+            # print ("traci: Removed stepListener %s"%(listenerID))
+            return True
+        warnings.warn("Cannot remove unknown listener %s.\nlisteners:%s" % (listenerID, self._stepListeners))
+        return False
 
     def getVersion(self):
         command = tc.CMD_GETVERSION
@@ -354,12 +399,40 @@ class Connection:
         self._sendExact()
 
     def close(self, wait=True):
-        if not _embedded:
-            if hasattr(self, "_socket"):
-                self._queue.append(tc.CMD_CLOSE)
-                self._string += struct.pack("!BB", 1 + 1, tc.CMD_CLOSE)
-                self._sendExact()
-                self._socket.close()
-                del self._socket
-            if wait and self._process is not None:
-                self._process.wait()
+        for listenerID in list(self._stepListeners.keys()):
+            self.removeStepListener(listenerID)
+        if hasattr(self, "_socket"):
+            self._queue.append(tc.CMD_CLOSE)
+            self._string += struct.pack("!BB", 1 + 1, tc.CMD_CLOSE)
+            self._sendExact()
+            self._socket.close()
+            del self._socket
+        if wait and self._process is not None:
+            self._process.wait()
+
+
+class StepListener(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def step(self, t=0):
+        """step(int) -> bool
+
+        After adding a StepListener 'listener' with traci.addStepListener(listener),
+        TraCI will call listener.step(t) after each call to traci.simulationStep(t)
+        The return value indicates whether the stepListener wants to stay active.
+        """
+        return True
+
+    def cleanUp(self):
+        """cleanUp() -> None
+
+        This method is called at removal of the stepListener, allowing to schedule some final actions
+        """
+        pass
+
+    def setID(self, ID):
+        self._ID = ID
+
+    def getID(self):
+        return self._ID

@@ -1,28 +1,25 @@
 /****************************************************************************/
 // Eclipse SUMO, Simulation of Urban MObility; see https://eclipse.org/sumo
-// Copyright (C) 2001-2019 German Aerospace Center (DLR) and others.
-// This program and the accompanying materials
-// are made available under the terms of the Eclipse Public License v2.0
-// which accompanies this distribution, and is available at
-// http://www.eclipse.org/legal/epl-v20.html
-// SPDX-License-Identifier: EPL-2.0
+// Copyright (C) 2001-2020 German Aerospace Center (DLR) and others.
+// This program and the accompanying materials are made available under the
+// terms of the Eclipse Public License 2.0 which is available at
+// https://www.eclipse.org/legal/epl-2.0/
+// This Source Code may also be made available under the following Secondary
+// Licenses when the conditions for such availability set forth in the Eclipse
+// Public License 2.0 are satisfied: GNU General Public License, version 2
+// or later which is available at
+// https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+// SPDX-License-Identifier: EPL-2.0 OR GPL-2.0-or-later
 /****************************************************************************/
 /// @file    GUIPolygon.h
 /// @author  Daniel Krajzewicz
 /// @author  Jakob Erdmann
 /// @author  Michael Behrisch
 /// @date    June 2006
-/// @version $Id$
 ///
 // The GUI-version of a polygon
 /****************************************************************************/
-#ifndef GUIPolygon_h
-#define GUIPolygon_h
-
-
-// ===========================================================================
-// included modules
-// ===========================================================================
+#pragma once
 #include <config.h>
 
 #include <string>
@@ -106,6 +103,16 @@ public:
     /// @brief set a new shape and update the tesselation
     virtual void setShape(const PositionVector& shape);
 
+    /** @brief Sets a new angle in navigational degrees
+     * @param[in] layer The new angle to use
+     */
+    virtual void setShapeNaviDegree(const double angle) {
+        SUMOPolygon::setShapeNaviDegree(angle);
+        if (angle != 0.) {
+            setShape(myShape);
+        }
+    }
+
 protected:
     /// @brief set color
     void setColor(const GUIVisualizationSettings& s, bool disableSelectionColor) const;
@@ -123,6 +130,9 @@ private:
     /// @brief id of the display list for the cached tesselation
     mutable GLuint myDisplayList;
 
+    /// @brief shape rotated on the centroid, if rotation is needed, nullptr otherwise
+    PositionVector* myRotatedShape;
+
     /// @brief store the drawing commands in a display list
     void storeTesselation(double lineWidth) const;
 
@@ -130,9 +140,3 @@ private:
     void performTesselation(double lineWidth) const;
 
 };
-
-
-#endif
-
-/****************************************************************************/
-
